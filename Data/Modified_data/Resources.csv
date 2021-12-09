@@ -1,0 +1,25 @@
+parameter name;Category;Subcategory;avail;gwp_op;c_op
+GASOLINE;Non-renewable;Fossil fuel;1000000.0;0.3448;0.082366044
+DIESEL;Non-renewable;Fossil fuel;1000000.0;0.3148;0.079743788
+LFO;Non-renewable;Fossil fuel;1000000.0;0.3115;0.06015058
+NG;Non-renewable;Fossil fuel;1000000.0;0.2666;0.04425306
+COAL;Non-renewable;Fossil fuel;33354.99944;0.4014;0.017657891999999998
+ELECTRICITY;Non-renewable;Other non-renewable;27567.311339999997;0.206485714;0.08433
+URANIUM;Non-renewable;Other non-renewable;1000000.0;0.0039;0.003876456
+WASTE;Non-renewable;Other non-renewable;17800.0;0.1501;0.023080857000000003
+WOOD;Renewable;Biomass;23400.0;0.0118;0.032815086
+WET_BIOMASS;Renewable;Biomass;38900.0;0.0118;0.00575743
+RES_WIND;Renewable;Non-biomass;1000000.0;0.0;0.0
+RES_SOLAR;Renewable;Non-biomass;1000000.0;0.0;0.0
+RES_HYDRO;Renewable;Non-biomass;1000000.0;0.0;0.0
+RES_GEO;Renewable;Non-biomass;1000000.0;0.0;0.0
+BIOETHANOL;Renewable;Biofuels;1000000.0;0.0;0.2257
+BIODIESEL;Renewable;Biofuels;1000000.0;0.0;0.24
+H2;Renewable;Electro-fuels;1000000.0;0.0;0.1771
+SNG;Renewable;Electro-fuels;1000000.0;0.0;0.1971
+SLF;Renewable;Electro-fuels;1000000.0;0.0;0.2114
+CO2_ATM ;Others;Others;1000000.0;0.0;0.0
+ELEC_EXPORT;Export;Export;1000000.0;0.0;0.0
+CO2_EMISSIONS;Export;Export;1000000.0;0.0;0.0
+CO2_INDUSTRY ;Others;Others;0.0;0.0;0.0
+CO2_CAPTURED;Others;Others;0.0;0.0;0.0

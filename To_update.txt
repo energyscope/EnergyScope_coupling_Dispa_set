@@ -1,0 +1,3 @@
+* verify data are up to date
+* correct the print into .run
+* to be able to make a loop with several iteration, add the possibility to choose the output folder's name and cd into it before launching the .run in which the path is '.\'
