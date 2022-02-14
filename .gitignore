@@ -12,3 +12,5 @@ energyscope/misc/__pycache__/
 *.pyc
 
 *.log
+
+case_studies/

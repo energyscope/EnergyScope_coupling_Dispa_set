@@ -7,19 +7,22 @@ Also contains functions to analyse input data
 
 @author: Paolo Thiran
 """
+import logging
 
 import numpy as np
 import pandas as pd
 import csv
 import os
+import shutil
+from subprocess import call
+import json
+import git
+from datetime import datetime
+
+from pathlib import Path
 
 
 # Useful functions for printing in AMPL syntax #
-def make_dir(path):
-    if not os.path.isdir(path):
-        os.mkdir(path)
-
-
 def ampl_syntax(df, comment):
     # adds ampl syntax to df
     df2 = df.copy()
@@ -56,42 +59,85 @@ def print_param(name, param, comment, out_path):
         else:
             writer.writerow(['param ' + str(name) + ' := ' + str(param) + '; # ' + str(comment)])
 
+def print_json(my_sets, file):  # printing the dictionary containing all the sets into directory/sets.json
+    with open(file, 'w') as fp:
+        json.dump(my_sets, fp, indent=4, sort_keys=True)
+    return
+
+def read_json(file):
+    # reading the saved dictionary containing all the sets from directory/sets.json
+    with open(file, 'r') as fp:
+        data = json.load(fp)
+    return data
+
 
 # Function to import the data from the CSV data files #
 def import_data(import_folders):
+    logging.info('Importing data files')
     # Reading CSV #
-
     # Reading User CSV to build dataframes
-    eud = pd.read_csv(import_folders[0] + '\\Demand.csv', sep=';', index_col=2, header=0)
-    resources = pd.read_csv(import_folders[0] + '\\Resources.csv', sep=';', index_col=2, header=2)
-    technologies = pd.read_csv(import_folders[0] + '\\Technologies.csv', sep=';', index_col=3, header=0)
+    eud = pd.read_csv(import_folders[0]/'Demand.csv', sep=';', index_col=2, header=0)
+    resources = pd.read_csv(import_folders[0]/'Resources.csv', sep=';', index_col=2, header=2)
+    technologies = pd.read_csv(import_folders[0]/'Technologies.csv', sep=';', index_col=3, header=0, skiprows=[1])
 
     # Reading Developer CSV to build dataframes
-    end_uses_categories = pd.read_csv(import_folders[1] + '\\END_USES_CATEGORIES.csv', sep=';')
-    layers_in_out = pd.read_csv(import_folders[1] + '\\Layers_in_out.csv', sep=';', index_col=0)
-    storage_characteristics = pd.read_csv(import_folders[1] + '\\Storage_Characteristics.csv', sep=';', index_col=0)
-    storage_eff_in = pd.read_csv(import_folders[1] + '\\Storage_eff_in.csv', sep=';', index_col=0)
-    storage_eff_out = pd.read_csv(import_folders[1] + '\\Storage_eff_out.csv', sep=';', index_col=0)
-    time_series = pd.read_csv(import_folders[1] + '\\Time_Series.csv', sep=';', header=0, index_col=0)
+    end_uses_categories = pd.read_csv(import_folders[1]/'END_USES_CATEGORIES.csv', sep=';')
+    layers_in_out = pd.read_csv(import_folders[1]/'Layers_in_out.csv', sep=';', index_col=0)
+    storage_characteristics = pd.read_csv(import_folders[1]/'Storage_characteristics.csv', sep=';', index_col=0)
+    storage_eff_in = pd.read_csv(import_folders[1]/'Storage_eff_in.csv', sep=';', index_col=0)
+    storage_eff_out = pd.read_csv(import_folders[1]/'Storage_eff_out.csv', sep=';', index_col=0)
+    time_series = pd.read_csv(import_folders[1]/'Time_series.csv', sep=';', header=0, index_col=0)
 
     # Pre-processing #
     resources.drop(columns=['Comment'], inplace=True)
     resources.dropna(axis=0, how='any', inplace=True)
     technologies.drop(columns=['Comment'], inplace=True)
     technologies.dropna(axis=0, how='any', inplace=True)
+    # cleaning indices and columns
 
-    return (eud, resources, technologies, end_uses_categories, layers_in_out,
-            storage_characteristics, storage_eff_in, storage_eff_out, time_series)
+    all_df = {'Demand': eud, 'Resources': resources, 'Technologies': technologies,
+              'End_uses_categories': end_uses_categories, 'Layers_in_out': layers_in_out,
+              'Storage_characteristics': storage_characteristics, 'Storage_eff_in': storage_eff_in,
+              'Storage_eff_out': storage_eff_out, 'Time_series': time_series}
+
+    for key in all_df:
+        if type(all_df[key].index[0]) == str:
+            all_df[key].index = all_df[key].index.str.strip()
+        if type(all_df[key].columns[0]) == str:
+            all_df[key].columns = all_df[key].columns.str.strip()
+
+    return all_df
 
 
 # Function to print the ESTD_data.dat file #
-def print_data(data, out_path, gwp_limit):
+def print_data(config):
+    # two_up = os.path.dirname(os.path.dirname(__file__))
+    two_up = Path(__file__).parents[2]
+
+    cs = two_up / 'case_studies'
+    cs.mkdir(parents=True, exist_ok=True)
+
+    (cs / config['case_study']).mkdir(parents=True, exist_ok=True)
+
+    data = config['all_data']
+
+    eud = data['Demand']
+    resources = data['Resources']
+    technologies = data['Technologies']
+    end_uses_categories = data['End_uses_categories']
+    layers_in_out = data['Layers_in_out']
+    storage_characteristics = data['Storage_characteristics']
+    storage_eff_in = data['Storage_eff_in']
+    storage_eff_out = data['Storage_eff_out']
+    time_series = data['Time_series']
+
+    logging.info('Printing ESTD_data.dat')
+
     # Prints the data into .dat file (out_path) with the right syntax for AMPL
-
-    out_path = out_path + '/ESTD_data.dat'
-
-    (eud, resources, technologies, end_uses_categories, layers_in_out, storage_characteristics,
-     storage_eff_in, storage_eff_out, time_Series) = data
+    out_path = cs / config['case_study'] / 'ESTD_data.dat'
+    # config['ES_path'] + '/ESTD_data.dat'
+    gwp_limit = config['GWP_limit']
+    import_capacity = config['import_capacity']  # [GW] Maximum power of electrical interconnections
 
     # Pre-processing df #
 
@@ -110,6 +156,8 @@ def print_data(data, out_path, gwp_limit):
 
     # Developer defined parameters #
     # Economical inputs
+
+    # TODO put everything into a config file so that we can modify it from outside the function
     i_rate = 0.015  # [-]
     # Political inputs
     re_share_primary = 0  # [-] Minimum RE share in primary consumption
@@ -129,6 +177,8 @@ def print_data(data, out_path, gwp_limit):
     share_heat_dhn_min = 0.02
     share_heat_dhn_max = 0.37
 
+    share_ned = pd.DataFrame([0.779, 0.029, 0.192], index=['HVC', 'METHANOL', 'AMMONIA'], columns=['share_ned'])
+
     # Electric vehicles :
     # km-pass/h/veh. : Gives the equivalence between capacity and number of vehicles.
     # ev_batt, size [GWh]: Size of batteries per car per technology of EV
@@ -141,22 +191,22 @@ def print_data(data, out_path, gwp_limit):
     # Network
     loss_network = {'ELECTRICITY': 4.7E-02, 'HEAT_LOW_T_DHN': 5.0E-02}
     c_grid_extra = 367.8  # cost to reinforce the grid due to intermittent renewable energy penetration. See 2.2.2
-    import_capacity = 9.72  # [GW] Maximum power of electrical interconnections
 
     # Storage daily
-    STORAGE_DAILY = ['TS_DEC_HP_ELEC', 'TS_DEC_THHP_GAS', 'TS_DEC_COGEN_GAS', 'TS_DEC_COGEN_OIL', 'TS_DEC_ADVCOGEN_GAS',
+    STORAGE_DAILY = ['TS_DEC_HP_ELEC', 'TS_DEC_THHP_GAS', 'TS_DEC_COGEN_GAS', 'TS_DEC_COGEN_OIL',
+                     'TS_DEC_ADVCOGEN_GAS',
                      'TS_DEC_ADVCOGEN_H2', 'TS_DEC_BOILER_GAS', 'TS_DEC_BOILER_WOOD', 'TS_DEC_BOILER_OIL',
-                     'TS_DEC_DIRECT_ELEC', 'TS_DHN_DAILY', 'BATT_LI', 'TS_HIGH_TEMP']
+                     'TS_DEC_DIRECT_ELEC', 'TS_DHN_DAILY', 'BATT_LI', 'TS_HIGH_TEMP']  # TODO automatise
 
     # Building SETS from data #
     SECTORS = list(eud_simple.columns)
     END_USES_INPUT = list(eud_simple.index)
     END_USES_CATEGORIES = list(end_uses_categories.loc[:, 'END_USES_CATEGORIES'].unique())
     RESOURCES = list(resources_simple.index)
-    RES_IMPORT_CONSTANT = ['DIESEL', 'GASOLINE', 'BIOETHANOL', 'BIODIESEL', 'LFO', 'NG', 'SLF', 'SNG', 'H2']
-    BIOFUELS = list(resources[resources.loc[:, 'Subcategory'] == 'Biofuels'].index) + ['SNG']
+    RES_IMPORT_CONSTANT = ['GAS', 'GAS_RE', 'H2_RE', 'H2']  # TODO automatise
+    RENEWABLE_FUELS = list(resources[resources.loc[:, 'Subcategory'] == 'Biofuel'].index)
     RE_RESOURCES = list(
-        resources.loc[(resources['Category'] == 'Renewable') & (resources['Subcategory'] != 'Electro-fuels'), :].index)
+        resources.loc[(resources['Category'] == 'Renewable'), :].index)
     EXPORT = list(resources.loc[resources['Category'] == 'Export', :].index)
 
     END_USES_TYPES_OF_CATEGORY = []
@@ -167,6 +217,7 @@ def print_data(data, out_path, gwp_limit):
 
     # TECHNOLOGIES_OF_END_USES_TYPE -> # METHOD 2 (uses layer_in_out to determine the END_USES_TYPE)
     END_USES_TYPES = list(end_uses_categories.loc[:, 'END_USES_TYPES_OF_CATEGORY'])
+
     ALL_TECHS = list(technologies_simple.index)
 
     layers_in_out_tech = layers_in_out.loc[~layers_in_out.index.isin(RESOURCES), :]
@@ -229,9 +280,12 @@ def print_data(data, out_path, gwp_limit):
     vehicule_capacity_df = ampl_syntax(vehicule_capacity_df, '# km-pass/h/veh. : Gives the equivalence between '
                                                              'capacity and number of vehicles.')
     eud_simple = ampl_syntax(eud_simple, '')
+    share_ned = ampl_syntax(share_ned, '')
     layers_in_out = ampl_syntax(layers_in_out, '')
     technologies_simple = ampl_syntax(technologies_simple, '')
+    technologies_simple[technologies_simple > 1e+14] = 'Infinity'
     resources_simple = ampl_syntax(resources_simple, '')
+    resources_simple[resources_simple > 1e+14] = 'Infinity'
     storage_eff_in = ampl_syntax(storage_eff_in, '')
     storage_eff_out = ampl_syntax(storage_eff_out, '')
     storage_characteristics = ampl_syntax(storage_characteristics, '')
@@ -247,8 +301,9 @@ def print_data(data, out_path, gwp_limit):
         writer.writerow(['#	EnergyScope TD is an open-source energy model suitable for country scale analysis.'
                          ' It is a simplified representation of an urban or national energy system accounting for the'
                          ' energy flows'])
-        writer.writerow(['#	within its boundaries. Based on a hourly resolution, it optimises the design and operation '
-                         'of the energy system while minimizing the cost of the system.'])
+        writer.writerow(
+            ['#	within its boundaries. Based on a hourly resolution, it optimises the design and operation '
+             'of the energy system while minimizing the cost of the system.'])
         writer.writerow(['#	'])
         writer.writerow(['#	Copyright (C) <2018-2019> <Ecole Polytechnique Fédérale de Lausanne (EPFL), '
                          'Switzerland and Université catholique de Louvain (UCLouvain), Belgium>'])
@@ -267,13 +322,15 @@ def print_data(data, out_path, gwp_limit):
         writer.writerow(['#	limitations under the License.'])
         writer.writerow(['#	'])
         writer.writerow(['#	Description and complete License: see LICENSE file.'])
-        writer.writerow(['# -------------------------------------------------------------------------------------------'
-                         '------------------------------	'])
+        writer.writerow(
+            ['# -------------------------------------------------------------------------------------------'
+             '------------------------------	'])
         writer.writerow(['	'])
         writer.writerow(['# UNIT MEASURES:'])
         writer.writerow(['# Unless otherwise specified units are:'])
         writer.writerow(
-            ['# Energy [GWh], Power [GW], Cost [MCHF], Time [h], Passenger transport [Mpkm], Freight Transport [Mtkm]'])
+            [
+                '# Energy [GWh], Power [GW], Cost [Meuro], Time [h], Passenger transport [Mpkm], Freight Transport [Mtkm]'])
         writer.writerow(['	'])
         writer.writerow(['# References based on Supplementary material'])
         writer.writerow(['# --------------------------	'])
@@ -287,7 +344,7 @@ def print_data(data, out_path, gwp_limit):
     print_set(END_USES_CATEGORIES, 'END_USES_CATEGORIES', out_path)
     print_set(RESOURCES, 'RESOURCES', out_path)
     print_set(RES_IMPORT_CONSTANT, 'RES_IMPORT_CONSTANT', out_path)
-    print_set(BIOFUELS, 'BIOFUELS', out_path)
+    print_set(RENEWABLE_FUELS, 'RENEWABLE_FUELS', out_path)
     print_set(RE_RESOURCES, 'RE_RESOURCES', out_path)
     print_set(EXPORT, 'EXPORT', out_path)
     newline(out_path)
@@ -353,7 +410,8 @@ def print_data(data, out_path, gwp_limit):
     print_param('re_share_primary', re_share_primary, 'Minimum RE share in primary consumption', out_path)
     print_param('gwp_limit', gwp_limit, 'gwp_limit [ktCO2-eq./year]: maximum GWP emissions', out_path)
     print_param('solar_area', solar_area, '', out_path)
-    print_param('power_density_pv', power_density_pv, 'PV : 1 kW/4.22m2   => 0.2367 kW/m2 => 0.2367 GW/km2', out_path)
+    print_param('power_density_pv', power_density_pv, 'PV : 1 kW/4.22m2   => 0.2367 kW/m2 => 0.2367 GW/km2',
+                out_path)
     print_param('power_density_solar_thermal', power_density_solar_thermal,
                 'Solar thermal : 1 kW/3.5m2 => 0.2857 kW/m2 => 0.2857 GW/km2', out_path)
     newline(out_path)
@@ -391,6 +449,8 @@ def print_data(data, out_path, gwp_limit):
     newline(out_path)
     print_param('share_heat_dhn_min', share_heat_dhn_min, '', out_path)
     print_param('share_heat_dhn_max', share_heat_dhn_max, '', out_path)
+    newline(out_path)
+    print_df('param:', share_ned, out_path)
     newline(out_path)
     with open(out_path, mode='a', newline='') as file:
         writer = csv.writer(file, delimiter='\t', quotechar=' ', quoting=csv.QUOTE_MINIMAL)
@@ -430,10 +490,25 @@ def print_data(data, out_path, gwp_limit):
 
 
 # Function to print the ESTD_12TD.dat file from timeseries and STEP1 results #
-def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_TD_selection\\TD_of_days.out',
-                  nbr_td=12,
-                  end_uses_reserve=pd.DataFrame(np.zeros((8760, 1)), columns=['end_uses_reserve'],
-                                                index=np.arange(1, 8761, 1))):
+def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((8760, 1)), columns=['end_uses_reserve'],
+                                                                  index=np.arange(1, 8761, 1))):
+    # two_up = os.path.dirname(os.path.dirname(__file__))
+    two_up = Path(__file__).parents[2]
+
+    cs = two_up / 'case_studies'
+    cs.mkdir(parents=True, exist_ok=True)
+
+    (cs / config['case_study']).mkdir(parents=True, exist_ok=True)
+
+    data = config['all_data']
+
+    time_series = data['Time_series']
+
+    out_path = cs / config['case_study']  # config['ES_path']
+    step1_out = config['step1_output']
+
+    logging.info('Printing ESTD_' + str(nbr_td) + 'TD.dat')
+
     # DICTIONARIES TO TRANSLATE NAMES INTO AMPL SYNTAX #
     # for EUD timeseries
     eud_params = {'Electricity (%_elec)': 'param electricity_time_series :',
@@ -447,10 +522,10 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
     res_mult_params = {'Solar': ['DHN_SOLAR', 'DEC_SOLAR']}
 
     # Merge end_uses__reserve to the other timeseries #
-    timeseries = timeseries.merge(end_uses_reserve, left_index=True, right_index=True)
+    time_series = time_series.merge(end_uses_reserve, left_index=True, right_index=True)
 
     # Redefine the output file from the out_path given #
-    out_path = out_path + '/ESTD_' + str(nbr_td) + 'TD.dat'
+    out_path = out_path/('ESTD_' + str(nbr_td) + 'TD.dat')
 
     # READING OUTPUT OF STEP1 #
     td_of_days = pd.read_csv(step1_out, names=['TD_of_days'])
@@ -482,7 +557,7 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
     t_h_td = t_h_td[['par_g', 'H_of_Y', 'comma1', 'H_of_D', 'comma2', 'TD_of_day', 'par_d']]
 
     # COMPUTING THE NORM OVER THE YEAR ##
-    norm = timeseries.sum(axis=0)
+    norm = time_series.sum(axis=0)
     norm.index.rename('Category', inplace=True)
     norm.name = 'Norm'
 
@@ -494,10 +569,10 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
         day_and_hour_array[i * 24:(i + 1) * 24, 1] = np.arange(1, 25, 1)
     day_and_hour = pd.DataFrame(day_and_hour_array, index=np.arange(1, 8761, 1), columns=['D_of_H', 'H_of_D'])
     day_and_hour = day_and_hour.astype('int64')
-    timeseries = timeseries.merge(day_and_hour, left_index=True, right_index=True)
+    time_series = time_series.merge(day_and_hour, left_index=True, right_index=True)
 
     # selecting time series of TD only
-    td_ts = timeseries[timeseries['D_of_H'].isin(sorted_td['TD_of_days'])]
+    td_ts = time_series[time_series['D_of_H'].isin(sorted_td['TD_of_days'])]
 
     # COMPUTING THE NORM_TD OVER THE YEAR FOR CORRECTION #
     # computing the sum of ts over each TD
@@ -517,7 +592,7 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
 
     # COMPUTE peak_sh_factor #
     max_sh_td = td_ts.loc[:, 'Space Heating (%_sh)'].max()
-    max_sh_all = timeseries.loc[:, 'Space Heating (%_sh)'].max()
+    max_sh_all = time_series.loc[:, 'Space Heating (%_sh)'].max()
     peak_sh_factor = max_sh_all / max_sh_td
 
     # PRINTING #
@@ -604,7 +679,7 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
         ts.to_csv(out_path, sep='\t', mode='a', header=True, index=True, index_label=s, quoting=csv.QUOTE_NONE)
         newline(out_path)
 
-    # printing c_p_t part where 1 ts => more then 1 tech        
+    # printing c_p_t part where 1 ts => more then 1 tech
     for k in res_mult_params.keys():
         for j in res_mult_params[k]:
             ts = all_td_ts[k]
@@ -633,15 +708,51 @@ def print_td_data(timeseries, out_path='STEP_2_Energy_Model', step1_out='STEP_1_
     return
 
 
+def update_version(config):
+    """
+
+    Updating the version.json file into case_studies directory to add the description of this run
+
+    """
+    # path of case_studies dir
+    two_up = Path(__file__).parents[2]
+    cs_versions = two_up / 'case_studies/versions.json'
+
+    # get git commit used
+    repo = git.Repo(search_parent_directories=True)
+    commit_name = repo.head.commit.summary
+
+    # get current datetime
+    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    # read versions dict
+    try:
+        versions = read_json(cs_versions)
+    except:
+        versions = dict()
+
+    # update the key for this case_study
+    keys_to_extract = ['comment', 'printing', 'printing_td', 'GWP_limit']
+    versions[config['case_study']] = {key: config[key] for key in keys_to_extract}
+    versions[config['case_study']]['commit_name'] = commit_name
+    versions[config['case_study']]['datetime'] = now
+
+    print_json(versions, cs_versions)
+    return
+
+
 # Function to compute the annual average emission factors of each resource from the outputs #
-def compute_gwp_op(import_folders, out_path='STEP_2_Energy_Model'):
+# Function to compute the annual average emission factors of each resource from the outputs #
+def compute_gwp_op(import_folders, out_path):
     # import data and model outputs
-    resources = pd.read_csv(import_folders[0] + '\\Resources.csv', sep=';', index_col=2, header=2)
-    yb = pd.read_csv(out_path + '\\output\\year_balance.txt', sep='\t', index_col=0)
+    resources = pd.read_csv(import_folders[0] / 'Resources.csv', sep=';', index_col=2, header=2)
+    yb = pd.read_csv((out_path / 'output') / 'year_balance.txt', sep='\t', index_col=0)
 
     # clean df and get useful data
     yb.rename(columns=lambda x: x.strip(), inplace=True)
     yb.rename(index=lambda x: x.strip(), inplace=True)
+    resources.rename(columns=lambda x: x.strip(), inplace=True)
+    resources.rename(index=lambda x: x.strip(), inplace=True)
     gwp_op_data = resources['gwp_op'].dropna()
     res_names = list(gwp_op_data.index)
     res_names_red = list(set(res_names) & set(list(yb.columns)))  # resources that are a layer
@@ -650,12 +761,13 @@ def compute_gwp_op(import_folders, out_path='STEP_2_Energy_Model'):
 
     # compute the actual resources used to produce each resource
     res_used = pd.DataFrame(0, columns=res_names_red, index=res_names)
-    fuel_mapping = {'SNG': 'NG', 'BIOETHANOL': 'GASOLINE', 'BIODIESEL': 'DIESEL'}
+    fuel_mapping = {'BIOETHANOL': 'GASOLINE', 'BIODIESEL': 'DIESEL', 'GAS_RE': 'GAS', 'H2_RE' : 'H2',
+                    'AMMONIA_RE': 'AMMONIA', 'METHANOL_RE': 'METHANOL'}
     for r in res_names_red:
         yb_r = yb2.loc[yb2.loc[:, r] > 0, :]
         for i, j in yb_r.iterrows():
             if i in res_names:
-                if i not in ['SNG', 'BIOETHANOL', 'BIODIESEL']:
+                if i not in fuel_mapping.keys():
                     res_used.loc[i, r] = res_used.loc[i, r] + j[i]
                 else:
                     res_used.loc[i, r] = res_used.loc[i, r] + j[fuel_mapping[i]]

@@ -32,7 +32,9 @@ setup(
     setup_requires=["setuptools_scm"],
     install_requires=[
         'numpy',
-        'pandas'
+        'pandas',
+        'gitpython',
+        'plotly'
     ],
     keywords=[]
 )
