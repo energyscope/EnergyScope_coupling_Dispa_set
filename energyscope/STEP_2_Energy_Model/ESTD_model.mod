@@ -35,7 +35,7 @@ set END_USES_CATEGORIES; # Categories of demand (end-uses): electricity, heat, m
 set END_USES_TYPES_OF_CATEGORY {END_USES_CATEGORIES}; # Types of demand (end-uses).
 set RESOURCES; # Resources: fuels (renewables and fossils) and electricity imports
 set RES_IMPORT_CONSTANT within RESOURCES; # resources imported at constant power (e.g. NG, diesel, ...)
-set BIOFUELS within RESOURCES; # imported biofuels.
+set RENEWABLE_FUELS within RESOURCES; # imported renewable fuels.
 set EXPORT within RESOURCES; # exported resources
 set END_USES_TYPES := setof {i in END_USES_CATEGORIES, j in END_USES_TYPES_OF_CATEGORY [i]} j; # secondary set
 set TECHNOLOGIES_OF_END_USES_TYPE {END_USES_TYPES}; # set all energy conversion technologies (excluding storage technologies and infrastructure)
@@ -44,7 +44,7 @@ set STORAGE_OF_END_USES_TYPES {END_USES_TYPES} within STORAGE_TECH; # set all st
 set INFRASTRUCTURE; # Infrastructure: DHN, grid, and intermediate energy conversion technologies (i.e. not directly supplying end-use demand)
 
 ## SECONDARY SETS: a secondary set is defined by operations on MAIN SETS
-set LAYERS := (RESOURCES diff BIOFUELS diff EXPORT) union END_USES_TYPES; # Layers are used to balance resources/products in the system
+set LAYERS := (RESOURCES diff RENEWABLE_FUELS diff EXPORT) union END_USES_TYPES; # Layers are used to balance resources/products in the system
 set TECHNOLOGIES := (setof {i in END_USES_TYPES, j in TECHNOLOGIES_OF_END_USES_TYPE [i]} j) union STORAGE_TECH union INFRASTRUCTURE; 
 set TECHNOLOGIES_OF_END_USES_CATEGORY {i in END_USES_CATEGORIES} within TECHNOLOGIES := setof {j in END_USES_TYPES_OF_CATEGORY[i], k in TECHNOLOGIES_OF_END_USES_TYPE [j]} k;
 set RE_RESOURCES within RESOURCES; # List of RE resources (including wind hydro solar), used to compute the RE share
@@ -89,6 +89,7 @@ param share_freight_road_min  >= 0, <= 1; # %_road,min [-]: min limit for penetr
 param share_freight_road_max  >= 0, <= 1; # %_road,min [-]: max limit for penetration of truck in freight transportation
 param share_heat_dhn_min >= 0, <= 1; # %_dhn,min [-]: min limit for penetration of dhn in low-T heating
 param share_heat_dhn_max >= 0, <= 1; # %_dhn,max [-]: max limit for penetration of dhn in low-T heating
+param share_ned {END_USES_TYPES_OF_CATEGORY["NON_ENERGY"]} >= 0, <= 1; # %_ned [-] share of non-energy demand per type of feedstocks.
 param t_op {HOURS, TYPICAL_DAYS} default 1;# [h]: operating time 
 param f_max {TECHNOLOGIES} >= 0; # Maximum feasible installed capacity [GW], refers to main output. storage level [GWh] for STORAGE_TECH
 param f_min {TECHNOLOGIES} >= 0; # Minimum feasible installed capacity [GW], refers to main output. storage level [GWh] for STORAGE_TECH
@@ -125,6 +126,8 @@ param power_density_solar_thermal >=0 default 0;# Maximum power irradiance for s
 ##Additional parameter (hard coded as '8760' in the thesis)
 param total_time := sum {t in PERIODS, h in HOUR_OF_PERIOD [t], td in TYPICAL_DAY_OF_PERIOD [t]} (t_op [h, td]); # [h]. added just to simplify equations
 
+
+
 #####################################
 ###   VARIABLES [Tables 2.3-2.4]  ###
 #####################################
@@ -140,6 +143,7 @@ var F_t {RESOURCES union TECHNOLOGIES, HOURS, TYPICAL_DAYS} >= 0; # F_t: Operati
 var Storage_in {i in STORAGE_TECH, LAYERS, HOURS, TYPICAL_DAYS} >= 0; # Sto_in [GW]: Power input to the storage in a certain period
 var Storage_out {i in STORAGE_TECH, LAYERS, HOURS, TYPICAL_DAYS} >= 0; # Sto_out [GW]: Power output from the storage in a certain period
 var Power_nuclear  >=0; # [GW] P_Nuc: Constant load of nuclear
+var Import_Constant {RES_IMPORT_CONSTANT} >= 0; # [GW] Resources imported at a constant flow (such as gas, electrofuels, ...)
 var Shares_mobility_passenger {TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_PASSENGER"]} >=0; # %_PassMob [-]: Constant share of passenger mobility
 var Shares_mobility_freight {TECHNOLOGIES_OF_END_USES_CATEGORY["MOBILITY_FREIGHT"]} >=0; # %_FreightMob [-]: Constant share of passenger mobility
 var Shares_lowT_dec {TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DECEN"] diff {"DEC_SOLAR"}}>=0 ; # %_HeatDec [-]: Constant share of heat Low T decentralised + its specific thermal solar
@@ -196,10 +200,14 @@ subject to end_uses_t {l in LAYERS, h in HOURS, td in TYPICAL_DAYS}:
 			(end_uses_input["MOBILITY_FREIGHT"]   * mob_freight_time_series [h, td] / t_op [h, td] ) *  Share_freight_boat
 		else (if l == "HEAT_HIGH_T" then
 			end_uses_input[l] / total_time
-		else (if l == "NON_ENERGY" then
-			end_uses_input[l] / total_time
+		else (if l == "HVC" then
+			end_uses_input["NON_ENERGY"] * share_ned ["HVC"] / total_time
+		else (if l == "AMMONIA" then
+			end_uses_input["NON_ENERGY"] * share_ned ["AMMONIA"] / total_time
+		else (if l == "METHANOL" then
+			end_uses_input["NON_ENERGY"] * share_ned ["METHANOL"] / total_time
 		else 
-			0 )))))))))); # For all layers which don't have an end-use demand
+		0 )))))))))))); # For all layers which don't have an end-use demand
 
 
 ## Cost
@@ -261,11 +269,9 @@ subject to capacity_factor {j in TECHNOLOGIES}:
 subject to resource_availability {i in RESOURCES}:
 	sum {t in PERIODS, h in HOUR_OF_PERIOD[t], td in TYPICAL_DAY_OF_PERIOD[t]} (F_t [i, h, td] * t_op [h, td]) <= avail [i];
 
-var Import_constant {RES_IMPORT_CONSTANT} >= 0;
+# [Eq. 2.12-bis] Constant flow of import for resources listed in SET RES_IMPORT_CONSTANT
 subject to resource_constant_import { i in RES_IMPORT_CONSTANT, h in HOURS, td in TYPICAL_DAYS}:
-	F_t [i, h, td] * t_op [h, td] = Import_constant [i];
-	
-
+	F_t [i, h, td] * t_op [h, td] = Import_Constant [i];
 
 ## Layers
 #--------
@@ -308,15 +314,13 @@ subject to storage_layer_in {j in STORAGE_TECH, l in LAYERS, h in HOURS, td in T
 subject to storage_layer_out {j in STORAGE_TECH, l in LAYERS, h in HOURS, td in TYPICAL_DAYS}:
 	Storage_out [j, l, h, td] * (ceil (storage_eff_out [j, l]) - 1) = 0;
 		
-# [Eq. 2.19] limit the Energy to power ratio. 
+# [Eq. 2.19] limit the Energy to power ratio for storage technologies except EV batteries
 subject to limit_energy_to_power_ratio {j in STORAGE_TECH diff {"BEV_BATT","PHEV_BATT"}, l in LAYERS, h in HOURS, td in TYPICAL_DAYS}:
 	Storage_in [j, l, h, td] * storage_charge_time[j] + Storage_out [j, l, h, td] * storage_discharge_time[j] <=  F [j] * storage_availability[j];
 	
-# [Eq. 2.19-bis] limit the Energy to power ratio. 
+# [Eq. 2.19-bis] limit the Energy to power ratio for EV batteries
 subject to limit_energy_to_power_ratio_bis {i in V2G, j in EVs_BATT_OF_V2G[i], l in LAYERS, h in HOURS, td in TYPICAL_DAYS}:
 	Storage_in [j, l, h, td] * storage_charge_time[j] + (Storage_out [j, l, h, td] + layers_in_out[i,"ELECTRICITY"]* F_t [i, h, td]) * storage_discharge_time[j]  <= ( F [j] - F_t [i,h,td] / vehicule_capacity [i] * batt_per_car[i] ) * storage_availability[j];
-	
-
 
 ## Networks
 #----------------
@@ -330,11 +334,9 @@ subject to extra_grid:
 	F ["GRID"] = 1 +  (c_grid_extra / c_inv["GRID"]) *(    (F ["WIND_ONSHORE"]     + F ["WIND_OFFSHORE"]     + F ["PV"]      )
 					                                     - (f_min ["WIND_ONSHORE"] + f_min ["WIND_OFFSHORE"] + f_min ["PV"]) );
 
-
 # [Eq. 2.22] DHN: assigning a cost to the network equal to the power capacity connected to the grid
 subject to extra_dhn:
 	F ["DHN"] = sum {j in TECHNOLOGIES diff STORAGE_TECH: layers_in_out [j,"HEAT_LOW_T_DHN"] > 0} (layers_in_out [j,"HEAT_LOW_T_DHN"] * F [j]);
-#	F ["DHN"] = sum {j in TECHNOLOGIES_OF_END_USES_TYPE["HEAT_LOW_T_DHN"]} (F [j]);
 	
 ## Additional constraints
 #------------------------
@@ -342,7 +344,6 @@ subject to extra_dhn:
 # [Eq. 2.23] Fix nuclear production constant : 
 subject to constantNuc {h in HOURS, td in TYPICAL_DAYS}:
 	F_t ["NUCLEAR", h, td] = Power_nuclear;
-
 
 # [Eq. 2.24] Operating strategy in mobility passenger (to make model more realistic)
 # Each passenger mobility technology (j) has to supply a constant share  (Shares_mobility_passenger[j]) of the passenger mobility demand
