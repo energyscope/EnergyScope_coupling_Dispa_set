@@ -1,2 +1,14 @@
 
 Docs/_build/
+
+.idea/
+
+energyscope.egg-info/
+
+energyscope/__pycache__/
+
+energyscope/misc/__pycache__/
+
+*.pyc
+
+*.log
