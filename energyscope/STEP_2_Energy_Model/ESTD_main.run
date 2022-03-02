@@ -87,10 +87,25 @@ param PathName symbolic default "./output"; #place where outputs are print
 			option gentimes 0; # show time
 
 
-			## Print dual value
+			## Print dual value of gwp_limit
 			print "--------------SAVING CO2 Cost -----------";
 			printf "%.6f", Minimum_GWP_reduction > (PathName & "/CO2_cost.txt");
+			
+			## Print marginal cost from layer balance
+			print "--------------SAVING Marginal Cost -----------";
+			printf "%s\t%s", "TD", "Hour"> (PathName & "/marginal_cost.txt");
+			for {l in LAYERS}{
+				printf "\t%s", l > (PathName & "/marginal_cost.txt");
+			}
+			printf "\n" > (PathName & "/marginal_cost.txt");
+			for {td in TYPICAL_DAYS, h in HOURS}{
+				printf "%.0f\t%.0f", td, h > (PathName & "/marginal_cost.txt");
 
+				for {l in LAYERS}{
+				printf "\t%.6f", layer_balance[l,h,td] > (PathName & "/marginal_cost.txt");
+				}
+				printf "\n" > (PathName & "/marginal_cost.txt");
+			}
 
 
 			## Print cost breakdown to txt file.

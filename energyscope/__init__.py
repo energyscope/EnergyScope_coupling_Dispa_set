@@ -64,8 +64,7 @@ except Exception:
     _LOGCONFIG['handlers']['console']['class'] = "logging.StreamHandler"
     logging.config.dictConfig(_LOGCONFIG)
 
-
-from .preprocessing.usefull_functions import compute_gwp_op, print_data, print_td_data, import_data, print_param, \
-    newline, print_df, print_set, ampl_syntax
-from .preprocessing.run_ES import run_ES
+from .preprocessing.usefull_functions import *
+from .preprocessing.run_ES import *
+from .postprocessing.postprocessing import *
 from .postprocessing.draw_sankey.ESSankey import drawSankey
