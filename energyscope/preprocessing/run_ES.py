@@ -1,4 +1,4 @@
-from .usefull_functions import import_data, print_data, print_td_data, update_version
+from .usefull_functions import import_data, print_data, print_td_data, update_version, read_json
 import pandas as pd
 import os
 from pathlib import Path
@@ -11,6 +11,8 @@ def run_ES(config):
     if config['importing']:
         # Reading the data
         all_data = import_data(config['data_folders'])
+        # TODO integrate better
+        config['user_defined'] = read_json(config['data_folders'][0] / 'user_defined.json')
     else:
         all_data = config['all_data']
 
