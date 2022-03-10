@@ -1,6 +1,7 @@
 import logging
 
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 def read_outputs(cs, hourly_data=False):
@@ -32,10 +33,17 @@ def read_outputs(cs, hourly_data=False):
     outputs['resources_breakdown'] = pd.read_csv(path/'resources_breakdown.txt', sep='\t', index_col=0)
     outputs['year_balance'] = pd.read_csv(path/'year_balance.txt', sep='\t', index_col=0).dropna(how='all', axis=1)
 
+    if hourly_data:
+        outputs['energy_stored'] = pd.read_csv(path/'hourly_data'/'energy_stored.txt', sep='\t', index_col=0)
+        outputs['layer_ELECTRICITY'] = pd.read_csv(path/'hourly_data'/'layer_ELECTRICITY.txt', sep='\t', index_col=[0,1])
+        outputs['layer_reserve_ELECTRICITY'] = pd.read_csv(path/'hourly_data'/'layer_reserve_ELECTRICITY.txt', sep='\t', index_col=[0,1])
+
+        # TODO addother layers
+
     for o in outputs:
         outputs[o] = clean_col_and_index(outputs[o])
 
-    #TODO add possibility to import hourly data aswell
+
 
     return outputs
 
@@ -52,8 +60,10 @@ def clean_col_and_index(df):
     The stripped dataframe
     """
     df2 = df.copy()
-    df2.rename(columns=lambda x: x.strip(), inplace=True)
-    df2.rename(index=lambda x: x.strip(), inplace=True)
+    if df2.columns.inferred_type == 'string':
+        df2.rename(columns=lambda x: x.strip(), inplace=True)
+    if df2.index.inferred_type == 'string':
+        df2.rename(index=lambda x: x.strip(), inplace=True)
     return df2
 
 def scale_marginal_cost(config: dict):
@@ -69,18 +79,20 @@ def scale_marginal_cost(config: dict):
     Scaled dataframe of marginal cost
 
     """
+    # Compute the number of days represented by each TD
     td = pd.read_csv(config['step1_output'], header=None)
-    td[1] = 1
-    a = td.groupby(0).sum()
-    a = a.set_index(np.arange(1,13))
-    b = np.repeat(a[1],24)
-    path = Path(__file__).parents[2]
-    cs = path/'case_studies'/config['case_study']/'output'
-    mc = pd.read_csv(cs/'marginal_cost.txt', sep='\t', index_col=[0,1])
-    h = np.resize(np.arange(1,25),288)
-    b = b.reset_index()
+    td[1] = 1 # add a column of 1 to sum
+    a = td.groupby(0).sum() # count the number of occurence of each TD
+    #TODO use Nbr_TD as an input
+    a = a.set_index(np.arange(1,13)) # renumber from 1 to 12 (=Nbr_TD)
+    b = np.repeat(a[1],24) # repeat the value for each TD 24 times (for each hour of the day)
+    h = np.resize(np.arange(1, 25), 12 * 24)  # hours of each of the 12 TDs
+    b = b.reset_index()  # put the TD number as a column
     b['hour'] = h
-    b = b.set_index(['index','hour'])
+    b = b.set_index(['index', 'hour'])  # set multi-index as (TD number, hour)
+    # Read marginal cost and rescale it
+    cs = Path(__file__).parents[2]/'case_studies'/config['case_study']/'output'
+    mc = pd.read_csv(cs/'marginal_cost.txt', sep='\t', index_col=[0,1])
     mc_scaled = mc.div(b[1],axis=0)
     mc_scaled.to_csv(cs / 'mc_scaled.txt', sep='\t')
     return mc_scaled
