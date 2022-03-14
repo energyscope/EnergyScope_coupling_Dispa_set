@@ -521,6 +521,8 @@ def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((876
     # Redefine the output file from the out_path given #
     out_path = out_path/('ESTD_' + str(nbr_td) + 'TD.dat')
 
+    #TODO add td_of_days or/and t_h_td and/or sorted_td into config?
+
     # READING OUTPUT OF STEP1 #
     td_of_days = pd.read_csv(step1_out, names=['TD_of_days'])
     td_of_days['day'] = np.arange(1, 366, 1)  # putting the days of the year beside
@@ -749,17 +751,19 @@ def compute_gwp_op(import_folders, out_path):
     resources.rename(index=lambda x: x.strip(), inplace=True)
     gwp_op_data = resources['gwp_op'].dropna()
     res_names = list(gwp_op_data.index)
-    res_names_red = list(set(res_names) & set(list(yb.columns)))  # resources that are a layer
+    resources_layers = list(set(res_names) & set(list(yb.columns)))  # resources that are a layer
     yb2 = yb.drop(index='END_USES_DEMAND')
-    tot_year = yb2.mul(yb2.gt(0)).sum()[res_names_red]
+    tot_year = yb2.mul(yb2.gt(0)).sum()[resources_layers] # keep only the part of yb2>0 the rest is set to zero then sum each column to have the production/import of each resource over the year
 
     # compute the actual resources used to produce each resource
-    res_used = pd.DataFrame(0, columns=res_names_red, index=res_names)
+    res_used = pd.DataFrame(0, columns=resources_layers, index=res_names)
     fuel_mapping = {'BIOETHANOL': 'GASOLINE', 'BIODIESEL': 'DIESEL', 'GAS_RE': 'GAS', 'H2_RE' : 'H2',
                     'AMMONIA_RE': 'AMMONIA', 'METHANOL_RE': 'METHANOL'}
-    for r in res_names_red:
-        yb_r = yb2.loc[yb2.loc[:, r] > 0, :]
+    for r in resources_layers:
+        print(r)
+        yb_r = yb2.loc[yb2.loc[:, r] > 1.0, :] # select rows with prouction of that resource
         for i, j in yb_r.iterrows():
+            print(i)
             if i in res_names:
                 if i not in fuel_mapping.keys():
                     res_used.loc[i, r] = res_used.loc[i, r] + j[i]
@@ -793,3 +797,49 @@ def compute_gwp_op(import_folders, out_path):
     gwp_op_final = gwp_op_new[res_names_red]
 
     return gwp_op_final.combine_first(gwp_op_data)
+
+
+def generate_t_h_td(config, Nbr_TD=12):
+    """Read output of STEP1 and generate t_h_td and td_count dataframes
+
+    Parameters
+    ----------
+    config: dict()
+    Configuration dictionnary of EnergyScope case study
+
+    Nbr_TD: int
+    Number of typical days
+
+    Returns
+    -------
+
+    t_h_td: pd.DataFrame
+    Dataframe containing 4 columns:
+    hour of the year (H_of_Y), hour of the day (H_of_D), typical day representing this day (TD_of_days)
+    and the number assigned to this typical day (TD_number)
+
+    td_count: pd.DataFrame
+    Dataframe containing 2 columns:
+    List of typical days (TD_of_days) and number of days they represent (#days)
+
+    """
+    #TODO add Nbr_TD as an input (into config?)
+
+    # READING OUTPUT OF STEP1 #
+    td_of_days = pd.read_csv(config['step1_output'], names=['TD_of_days'])
+    td_of_days['day'] = np.arange(1, 366, 1)  # putting the days of the year beside
+
+    # COMPUTING NUMBER OF DAYS REPRESENTED BY EACH TD AND ASSIGNING A TD NUMBER TO EACH REPRESENTATIVE DAY
+    td_count = td_of_days.groupby('TD_of_days').count()
+    td_count = td_count.reset_index().rename(columns={'index': 'TD_of_days', 'day': '#days'})
+    td_count['TD_number'] = np.arange(1, Nbr_TD + 1)
+
+    # BUILDING T_H_TD MATRICE
+    t_h_td = pd.DataFrame(np.repeat(td_of_days['TD_of_days'].values, 24, axis=0),
+                          columns=['TD_of_days'])  # column TD_of_days is each TD repeated 24 times
+    map_td = dict(zip(td_count['TD_of_days'],
+                      np.arange(1, Nbr_TD + 1)))  # mapping dictionnary from TD_of_Days to TD number
+    t_h_td['TD_number'] = t_h_td['TD_of_days'].map(map_td)
+    t_h_td['H_of_D'] = np.resize(np.arange(1, 25), t_h_td.shape[0])  # 365 times hours from 1 to 24
+    t_h_td['H_of_Y'] = np.arange(1, 8761)
+    return t_h_td, td_count
