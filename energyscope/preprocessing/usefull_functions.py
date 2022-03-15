@@ -760,10 +760,8 @@ def compute_gwp_op(import_folders, out_path):
     fuel_mapping = {'BIOETHANOL': 'GASOLINE', 'BIODIESEL': 'DIESEL', 'GAS_RE': 'GAS', 'H2_RE' : 'H2',
                     'AMMONIA_RE': 'AMMONIA', 'METHANOL_RE': 'METHANOL'}
     for r in resources_layers:
-        print(r)
         yb_r = yb2.loc[yb2.loc[:, r] > 1.0, :] # select rows with prouction of that resource
         for i, j in yb_r.iterrows():
-            print(i)
             if i in res_names:
                 if i not in fuel_mapping.keys():
                     res_used.loc[i, r] = res_used.loc[i, r] + j[i]
@@ -794,7 +792,7 @@ def compute_gwp_op(import_folders, out_path):
         conv = (gwp_op_new - gwp_op).abs().sum()
         count += 1
 
-    gwp_op_final = gwp_op_new[res_names_red]
+    gwp_op_final = gwp_op_new[resources_layers]
 
     return gwp_op_final.combine_first(gwp_op_data)
 
