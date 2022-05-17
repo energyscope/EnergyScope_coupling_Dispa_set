@@ -91,15 +91,15 @@ plotting_names = {'ELECTRICITY': 'Electricity',
                   'AMMONIA_TO_H2': 'Ammonia to H2', 'OIL_TO_HVC': 'Oil to HVC', 'GAS_TO_HVC': 'Gas to HVC',
                   'BIOMASS_TO_HVC': 'Biomass to HVC', 'METHANOL_TO_HVC': 'Methanol to HVC',
                   'END_USE':'End use',
-                  'PHS': 'PHS', 'BATT_LI': 'Lithium batt.', 'BEV_BATT': 'EV batt.', 'PHEV_BATT': 'Plug-in hybrid batt.',
-                  'TS_DEC_DIRECT_ELEC': 'TS dec. direct elec.', 'TS_DEC_HP_ELEC': 'TS dec. HP elec.',
+                  'PHS': 'Pumped hydro sto.', 'BATT_LI': 'Lithium batt.', 'BEV_BATT': 'Electric vehicle batt.', 'PHEV_BATT': 'Plug-in hybrid batt.',
+                  'TS_DEC_DIRECT_ELEC': 'TS dec. direct elec.', 'TS_DEC_HP_ELEC': 'Thermal sto. dec.',
                   'TS_DEC_THHP_GAS': 'TS dec. THHP gas',
                   'TS_DEC_COGEN_GAS': 'TS dec. cogen. gas', 'TS_DEC_COGEN_OIL': 'TS dec. cogen. oil',
                   'TS_DEC_ADVCOGEN_GAS': 'TS dec. advcogen. gas', 'TS_DEC_ADVCOGEN_H2': 'TS dec. advcogen. h2',
                   'TS_DEC_BOILER_GAS': 'TS dec. boiler gas', 'TS_DEC_BOILER_WOOD': 'TS dec. boiler wood',
                   'TS_DEC_BOILER_OIL': 'TS dec. boiler oil',
-                  'TS_DHN_DAILY': 'TS DHN daily', 'TS_DHN_SEASONAL': 'TS DHN seasonal',
-                  'TS_HIGH_TEMP': 'TS high temp.',
+                  'TS_DHN_DAILY': 'TS DHN daily', 'TS_DHN_SEASONAL': 'Thermal sto. DHN seasonal',
+                  'TS_HIGH_TEMP': 'Thermal sto. high temp.',
                   'GAS_STORAGE': 'Gas storage', 'H2_STORAGE': 'H2 storage',
                   'DIESEL_STORAGE': 'Diesel storage', 'GASOLINE_STORAGE': 'Gasoline storage',
                   'LFO_STORAGE': 'Oil storage',
@@ -112,15 +112,17 @@ colors_elec = {'Ind. cogen. gas': '#DC143C', # Heat HT in sankey
                'Wind onshore': '#00B050', # Light green
                'Wind offshore': '#548235', # Darker green
                'Other prod.': '#a85432', # Red-brown
-               'PHS Pout': '#0369AB', # blue
-               'PHS Pin': '#0369AB', # blue
-               'EV batt. Pout': '#BD7B00', # light brown
-               'EV batt. Pin': '#BD7B00', # Light brown
+               'Pumped hydro sto. Pout': '#0369AB', # blue
+               'Pumped hydro sto. Pin': '#0369AB', # blue
+               'Electric vehicle batt. Pout': '#BD7B00', # light brown
+               'Electric vehicle batt. Pin': '#BD7B00', # Light brown
                'End use': '#BAD3EE', # Light blue
                'Public mobility': '#EDA200', # Very light brown
                'Other cons.': '#329da8', # Blue-green
                'DHN HP elec.': '#F20000', # Red
                'Dec. HP elec.': '#FF6D66', # Light red
-               'Ind. direct elec.': '#B60000' # Dark red
+               'Ind. direct elec.': '#B60000', # Dark red
+               'Lithium batt. Pout': '#6fb1c7', #Light blue (close to elec)
+               'Lithium batt. Pin': '#6fb1c7' # Light blue (close to elec)
                 }
 #TODO add other tech into colors_elec

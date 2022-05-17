@@ -4,16 +4,19 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import energyscope as es
+import dispaset as ds
 import pickle
+
 
 if __name__ == '__main__':
 
-    case_study = 'GwpLimit=40000_ElecImport=0'
-    n_iter = 6
+    case_study = '37500_ElecImport=0'
+    n_iter = 4
     plot = True
     hourly_plot = True
+    ds_plots = False
     show_plots = True
-    save_plots = True
+    save_plots = False
 
     path = Path(__file__).parents[1]
     user_data = path/'Data'/'User_data'
@@ -28,7 +31,7 @@ if __name__ == '__main__':
               'importing': True,
               'printing': False,
               'printing_td': False,
-              'GWP_limit': 12500,  # [ktCO2-eq./year]	# Minimum GWP reduction
+              'GWP_limit': 37500,  # [ktCO2-eq./year]	# Minimum GWP reduction
               'import_capacity': 9.72,  # [GW] Electrical interconnections with neighbouring countries
               'data_folders':  [user_data, developer_data],  # Folders containing the csv data files
               'ES_path':  es_path,  # Path to the energy model (.mod and .run files)
@@ -47,9 +50,12 @@ if __name__ == '__main__':
     results = dict()
     results[0] = dict()
     inputs[0] = dict()
+    conv = pd.DataFrame(index=['OutputOptimizationError'])
     for i in range(n_iter):
         # read ES results
-        results_es[i] = es.read_outputs(config['case_study']+'_loop_'+str(i), hourly_data=True)
+        results_es[i] = es.read_outputs(config['case_study']+'_loop_'+str(i), hourly_data=True,
+                                        layers=['layer_ELECTRICITY', 'layer_reserve_ELECTRICITY'])
+
         # read DS results
         with open(cs_dir / (config['case_study'] + '_loop_' + str(i)) / 'output' / 'DS_Results.p','rb') as file:
             try:
@@ -58,12 +64,21 @@ if __name__ == '__main__':
             except EOFError:
                 pass
 
+        conv.loc[:,i] = results[i]['OutputOptimizationError'].max()
+        if (results[i]['OutputOptimizationError'] > 0).any():
+            print('Another iteration required')
+        else:
+            print('Final convergence occurred in loop: ' + str(i) + '. Soft-linking is now complete')
+            n_iter=i+1
+            iters = np.arange(n_iter - 1, -1, -1)
+            break
+
     # extracting the yearly info for each loop
-    eff_tech = config['all_data']['Layers_in_out'].drop(config['all_data']['Resources'].index)
+    resources_names = list(config['all_data']['Resources'].index)
+    eff_tech = config['all_data']['Layers_in_out'].drop(resources_names)
     elec_tech = list(eff_tech.loc[config['all_data']['Layers_in_out'].loc[:,'ELECTRICITY']>0.1,:].index)
     elec_cons_tech = list(eff_tech.loc[config['all_data']['Layers_in_out'].loc[:,'ELECTRICITY']<-0.1,:].index)
     sto_tech = list(config['all_data']['Storage_characteristics'].index)
-    resources_names = list(config['all_data']['Resources'].index)
 
     assets_elec = pd.DataFrame()
     assets_cons_elec = pd.DataFrame()
@@ -71,18 +86,21 @@ if __name__ == '__main__':
     resources = pd.DataFrame()
     res_max = pd.DataFrame()
     cp = pd.DataFrame()
+    total_cost = pd.DataFrame(columns=results_es[0]['cost_breakdown'].columns)
 
     for i in range(n_iter):
-        assets_elec[i] = results_es[i]['assets'].loc[elec_tech,'f']
+        assets_elec.loc[:,i] = es.get_assets_l('ELECTRICITY',eff_tech, results_es[i]['assets'],treshold=0.05).loc[:,'f'] #results_es[i]['assets'].loc[elec_tech,'f']*config['all_data']['Layers_in_out'].loc[elec_tech,'ELECTRICITY']
         cp[i] = results_es[i]['assets'].loc[:, 'c_p']
         assets_cons_elec[i] = results_es[i]['assets'].loc[elec_cons_tech,'f']
         assets_sto[i] = results_es[i]['assets'].loc[sto_tech,'f']
         resources[i] = results_es[i]['resources_breakdown'].loc[:,'Used']
         res_max[i] = results_es[i]['resources_breakdown'].loc[:,'Potential']
+        total_cost.loc[i,:] = results_es[i]['cost_breakdown'].sum(axis=0)
+    total_cost.loc[:,'Total cost'] = total_cost.sum(axis=1)
 
     cp.to_csv(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' /'cp.csv')
 
-    iter_to_plot = 3
+    iter_to_plot = n_iter-1
     # exploring storage level for last loop
     sto_ts = results_es[(iter_to_plot)]['energy_stored']
     sto_lvl = sto_ts.loc[:,sto_tech]
@@ -100,107 +118,176 @@ if __name__ == '__main__':
     layer_reserve_elec = results_es[iter_to_plot]['layer_reserve_ELECTRICITY'].dropna(axis=1)
 
 
-    # DS outputs
+    # # DS outputs
     LL = pd.DataFrame()
     Curtailment = pd.DataFrame()
-    for i in np.arange(1,n_iter):
+    for i in np.arange(0,n_iter):
         LL = pd.concat([LL, results[i]['OutputShedLoad']], axis=1)
         Curtailment = pd.concat([Curtailment, results[i]['OutputCurtailedPower']], axis=1)
-    LL.columns = np.arange(1,n_iter)
-    Curtailment.columns = np.arange(1,n_iter)
+    LL.columns = np.arange(0,n_iter)
+    Curtailment.columns = np.arange(0,n_iter)
     ENS_max = LL.max()
+
+    # Compute curtailment in DS and ES and share renewables in elec and primary
+    yr_curt_ds = Curtailment.sum() / 1000
+    re_assets = ['PV', 'WIND_ONSHORE', 'WIND_OFFSHORE', 'HYDRO_RIVER']
+    yr_elec_es = pd.DataFrame(index=results_es[i]['year_balance'].index)
+    for i in range(n_iter):
+        yr_elec_es[i] = results_es[i]['year_balance'].loc[:,'ELECTRICITY']
+    yr_elec_es.loc['END_USES_DEMAND',:] = -yr_elec_es.loc['END_USES_DEMAND',:]
+    yr_elec_es = yr_elec_es.loc[yr_elec_es.abs().max(axis=1)>1.0,:]
+    yr_elec_prod = yr_elec_es.loc[yr_elec_es.max(axis=1)>0.0,:]
+    yr_elec_re_prod = yr_elec_es.loc[re_assets,:]
+    yr_elec_cons = yr_elec_es.loc[yr_elec_es.max(axis=1)<0.0,:]
+    total_prod_elec = yr_elec_prod.sum()
+    total_prod_elec_re = yr_elec_re_prod.sum()
+    share_re_elec = total_prod_elec_re/total_prod_elec
+    share_re_primary = resources.loc[config['all_data']['Resources'].loc[:,'Category']=='Renewable',:].sum()/resources.sum()
+    cp_max_re = config['all_data']['Time_series'].loc[:,['PV', 'Wind_onshore', 'Wind_offshore', 'Hydro_river']].sum()/8760
+    cp_max_re.index = re_assets
+    curt_es = -((cp.loc[re_assets,:].sub(cp_max_re.loc[re_assets], axis=0))*assets_elec).sum()*8760
+
+
+    yr_bal_diff = results_es[n_iter-1]['year_balance']-results_es[0]['year_balance']
 
     # %% #######
     # Plotting #
     ############
     if plot:
-        # plotting elec assets
-        fig, ax = plt.subplots(figsize=(5, 3))
-        assets_elec.loc[assets_elec.sum(axis=1)>0.1,iters].rename(index=lambda x: x.capitalize().replace("_"," "))\
-            .sort_values(by=(n_iter-1)).plot(kind='barh', ax=ax)
-        ax.set_title('Installed capacity of electricity assets')
-        ax.legend(loc='lower right')
-        ax.set_xlabel('Capacity [GW]')
+        # Update font sizes in plots
+        SMALL_SIZE = 16
+        MEDIUM_SIZE = 18
+        BIGGER_SIZE = 20
+
+        plt.rc('font', size=SMALL_SIZE)  # controls default text sizes
+        plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the axes title
+        plt.rc('axes', labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+        plt.rc('xtick', labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
+        plt.rc('ytick', labelsize=SMALL_SIZE)  # fontsize of the tick labels
+        plt.rc('legend', fontsize=MEDIUM_SIZE)  # legend fontsize
+        plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
+        # List to rename the iteration
+        iter_names = ['No reserve', 'Initialization'] + ['Iteration ' + str(i) for i in np.arange(1, n_iter - 1, 1)]
+
+        # # plotting convergence TODO
+        # fig, ax = plt.subplots(figsize=(13, 7))
+        # # conv.columns = iter_names
+        # conv.loc['OutputOptimizationError',1:].plot(logy=True,ax=ax)
+        # ax.set_title('Evolution of the convergence criteria (optimization error)')
+        # # handles, labels = ax.get_legend_handles_labels()
+        # # ax.legend(handles[::-1], iter_names, loc='lower right', frameon=False)
+        # # ax.set_xlabel('Capacity [GW]')
+        # # ax.set_ylim([0, conv.max().max()])
+        # fig.tight_layout()
+        # if show_plots:
+        #     fig.show()
+        # if save_plots:
+        #     fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'convergence.png')
+
+        # plotting assets elec
+        fig,ax = es.plot_barh(assets_elec,treshold=0.15,
+                     title='Electricity assets', x_label='Capacity [GW]', legend={'labels':iter_names},
+                     show_plot=show_plots)
+
+        # plotting cp of elec assets
+        assets_to_plot = assets_elec.loc[assets_elec.max(axis=1) > 0.15, iters].sort_values(by=(n_iter - 1))
+        fig,ax = es.plot_barh(cp.loc[assets_to_plot.index,:],treshold=0.15,
+                     title='Capacity factor of electricity assets', x_label='Capacity factor',
+                     legend={'labels':iter_names}, show_plot=show_plots)
+
+
+        # assets and cp on subplots
+        fig, axes = plt.subplots(1, 2, sharey=True, figsize=(13, 7))
+        assets_to_plot = assets_elec.loc[assets_elec.max(axis=1) > 0.15, iters].sort_values(by=(n_iter - 1))
+        assets_to_plot.rename(index=es.plotting_names).plot(kind='barh', width=0.8, legend=False,
+                                                            colormap='viridis', ax=axes[0])
+        axes[0].set_title('Installed capacity')
+        axes[0].set_xlabel('Capacity [GW]')
+
+        cp_elec = cp.loc[assets_to_plot.index, :]
+        cp_elec.loc[cp_elec.max(axis=1) > 0.01, iters].rename(index=es.plotting_names) \
+            .plot(kind='barh', width=0.8, legend='reverse', colormap='viridis', ax=axes[1])
+        axes[1].set_title('Capacity factor')
+        axes[1].set_xlabel('Capacity factor')
+        axes[1].set_xlim([0, 1])
+
+        handles, labels = axes[1].get_legend_handles_labels()
+        axes[1].legend(handles[::-1], iter_names, loc='upper right', frameon=False)
+
         fig.tight_layout()
-        fig.show()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'capacity_cp_elec.png')
 
         # plotting resources used all and with a zoom
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (resources.loc[resources.sum(axis=1)>1.0,iters]/1000).rename(index=lambda x: x.capitalize().replace("_"," "))\
-            .sort_values(by=(n_iter-1)).plot(kind='barh', ax=ax)
-        ax.set_title('Primary resources')
-        ax.legend(loc='lower right')
-        ax.set_xlabel('Primary resources [TWh]')
-        ax.set_ylabel('')
-        fig.tight_layout()
-        fig.show()
+        fig, ax = es.plot_barh(resources/1000,treshold=0.001,
+                     title='Primary resources', x_label='Primary resources [TWh]',
+                     legend={'labels':iter_names}, show_plot=show_plots)
+        fig, ax = es.plot_barh((resources.loc[(resources.sum(axis=1)>1.0) & (resources.sum(axis=1)<100000),iters]/1000), treshold=0.001,
+                     title='Primary resources', x_label='Primary resources [TWh]',
+                     legend={'labels': iter_names}, show_plot=show_plots)
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (resources.loc[(resources.sum(axis=1)>1.0) & (resources.sum(axis=1)<100000),iters]/1000).rename(index=lambda x: x.capitalize().replace("_"," "))\
-            .sort_values(by=(n_iter-1)).plot(kind='barh', ax=ax)
-        ax.set_title('Primary resources (zoom<100TWh)')
-        ax.legend(loc='lower right')
-        ax.set_xlabel('Primary resources [TWh]')
-        ax.set_ylabel('')
-        fig.tight_layout()
-        fig.show()
 
-        # plotting storage assets into 2 parts
-        fig, ax = plt.subplots(figsize=(5, 3))
-        assets_sto.loc[assets_sto.sum(axis=1) > 1000, iters].rename(index=lambda x: x.capitalize().replace("_", " ")) \
-            .sort_values(by=(n_iter - 1)).plot(kind='barh', ax=ax)
-        ax.set_title('Installed capacity of storage assets (>1000 GWh)')
-        ax.legend(loc='lower right')
-        ax.set_xlabel('Capacity [GWh]')
-        fig.tight_layout()
-        fig.show()
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        assets_sto.loc[(assets_sto.sum(axis=1) > 1.0) & (assets_sto.sum(axis=1) < 1000), iters] \
-            .rename(index=lambda x: x.capitalize().replace("_", " ")).sort_values(by=(n_iter - 1)) \
-            .plot(kind='barh', ax=ax)
-        ax.set_title('Installed capacity of storage assets (<1000 GWh)')
-        ax.legend(loc='lower right')
-        ax.set_xlabel('Capacity [GWh]')
-        fig.tight_layout()
-        fig.show()
+
+        # plotting storage assets
+        fig, ax = es.plot_barh(assets_sto.drop(index='GAS_STORAGE'), treshold=1.0,
+                     title='Installed capacity of storage assets', x_label='Capacity [GWh]',
+                     legend={'labels': iter_names}, show_plot=show_plots)
+        # if save_plots:
+        #     fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'assets_sto.png')
+
 
         #plotting storage level
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (sto_lvl.loc[:,(sto_lvl.max()>1000)]).rename(columns=lambda x: x.capitalize().replace("_"," ")).plot(kind='line', ax=ax)
+        fig, ax = plt.subplots(figsize=(13, 7))
+        (sto_lvl.loc[:,(sto_lvl.max()>1000)].drop(columns=['GAS_STORAGE'])).rename(columns=es.plotting_names).plot(kind='line', ax=ax)
         ax.set_title('Storage level (max>1000 GWh)')
         # ax.legend(loc='center right', bbox_to_anchor=(1.6, 0.5))
         ax.set_xlabel('Hour')
         ax.set_ylabel('Storage level [GWh]')
         fig.tight_layout()
-        fig.show()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'sto_1000GWh_lvl.png')
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (sto_lvl.loc[:,(sto_lvl.max()>50) & (sto_lvl.max()<1000)]).rename(columns=lambda x: x.capitalize().replace("_"," ")).plot(kind='line', ax=ax)
+        fig, ax = plt.subplots(figsize=(13, 7))
+        (sto_lvl.loc[:,(sto_lvl.max()>50) & (sto_lvl.max()<1000)]).rename(columns=es.plotting_names).plot(kind='line', ax=ax)
         ax.set_title('Storage level (50<max<1000 GWh)')
         # ax.legend(loc='center right', bbox_to_anchor=(1.6, 0.5))
         ax.set_xlabel('Hour')
         ax.set_ylabel('Storage level [GWh]')
         fig.tight_layout()
-        fig.show()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'sto_50_lvl_1000GWh.png')
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (sto_lvl.loc[:,(sto_lvl.max()>10) & (sto_lvl.max()<50)]).rename(columns=lambda x: x.capitalize().replace("_"," ")).plot(kind='line', ax=ax)
+        fig, ax = plt.subplots(figsize=(13, 7))
+        (sto_lvl.loc[:,(sto_lvl.max()>10) & (sto_lvl.max()<50)]).rename(columns=es.plotting_names).plot(kind='line', ax=ax)
         ax.set_title('Storage level (10<max<50)')
         # ax.legend(loc='center right', bbox_to_anchor=(1.6, 0.5))
         ax.set_xlabel('Hour')
         ax.set_ylabel('Storage level [GWh]')
         fig.tight_layout()
-        fig.show()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'sto_10_lvl_50GWh.png')
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        (sto_lvl.loc[:,(sto_lvl.max()>0.2) & (sto_lvl.max()<7)]).rename(columns=lambda x: x.capitalize().replace("_"," ")).plot(kind='line', ax=ax)
+        fig, ax = plt.subplots(figsize=(13, 7))
+        (sto_lvl.loc[:,(sto_lvl.max()>0.2) & (sto_lvl.max()<7)]).rename(columns=es.plotting_names).plot(kind='line', ax=ax)
         ax.set_title('Storage level (max<10)')
         # ax.legend(loc='center right', bbox_to_anchor=(1.6, 0.5))
         ax.set_xlabel('Hour')
         ax.set_ylabel('Storage level [GWh]')
         fig.tight_layout()
-        fig.show()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'sto_lvl_10GWh.png')
 
         # colors = {'ELECTRICITY', 'ELEC_EXPORT', 'CCGT', 'PV', 'WIND_ONSHORE',
         #    'WIND_OFFSHORE', 'HYDRO_RIVER', 'IND_COGEN_GAS', 'IND_COGEN_WOOD',
@@ -217,10 +304,47 @@ if __name__ == '__main__':
         #    'BEV_BATT_Pout', 'PHEV_BATT_Pin', 'PHEV_BATT_Pout', 'END_USE'}
         if hourly_plot:
             # plot elec layer
-            d1  = es.plot_layer_elec_td(layer_elec=layer_elec, title='Layer electricity', tds = np.arange(1, 13), reorder_elec = None, figsize = (13, 7))
+            d1  = es.plot_layer_elec_td(layer_elec=layer_elec, title='Layer electricity', tds = np.arange(1, 13), reorder_elec = None, figsize = (15, 7))
             # d2  = es.plot_layer_elec_td(layer_elec=layer_elec, title='Layer electricity (4 TDs)', tds = np.array([1,5,9,12]), reorder_elec = None, figsize = (13, 7))
-            d3  = es.plot_layer_elec_td(layer_elec=layer_reserve_elec, title='Layer electricity reserve', tds = np.arange(1, 13), reorder_elec = None, figsize = (13, 7))
-            d4  = es.plot_layer_elec_td(layer_elec=layer_reserve_elec-layer_elec, title='Difference reserve and real operation', tds = np.arange(1, 13), reorder_elec = None, figsize = (13, 7))
+            d3  = es.plot_layer_elec_td(layer_elec=layer_reserve_elec, title='Layer electricity reserve', tds = np.arange(1, 13), reorder_elec = None, figsize = (15, 7))
+            d4  = es.plot_layer_elec_td(layer_elec=layer_reserve_elec-layer_elec, title='Difference reserve and real operation', tds = np.arange(1, 13), reorder_elec = None, figsize = (15, 7))
+            # TODO do the same for heating layer, add possibility to savefig?
+            # layer_elec_yr = es.from_td_to_year(layer_elec, t_h_td)
 
+        if ds_plots:
+
+            rng = pd.date_range('2015-1-01', '2015-12-31', freq='H')
+            # Generate country-specific plots
+            ds.plot_zone(inputs[iter_to_plot], results[iter_to_plot], rng=rng, z_th='ES_DHN')
+
+            # Bar plot with the installed capacities in all countries:
+            cap = ds.plot_zone_capacities(inputs[iter_to_plot], results[iter_to_plot])
+
+            # Bar plot with installed storage capacity
+            sto = ds.plot_tech_cap(inputs[iter_to_plot])
+
+            # Violin plot for CO2 emissions
+            ds.plot_co2(inputs[iter_to_plot], results[iter_to_plot], figsize=(9, 6), width=0.9)
+
+            # Bar plot with the energy balances in all countries:
+            ds.plot_energy_zone_fuel(inputs[iter_to_plot], results[iter_to_plot], ds.get_indicators_powerplant(inputs[2], results[2]))
+
+            # Analyse the results for each country and provide quantitative indicators:
+            r = ds.get_result_analysis(inputs[iter_to_plot], results[iter_to_plot])
 
         #TODO add other interesting plots -> energy stored, fourrier transform, layer (colors!!),...
+
+        #TODO add plots from DS
+        results_es[0]['layer_HEAT_HIGH_T'] = es.read_layer(config['case_study']+'_loop_'+str(i), 'layer_HEAT_HIGH_T')
+        #pd.read_csv(cs_dir/ (config['case_study']+'_loop_0') / 'output' / 'hourly_data' / 'layer_HEAT_HIGH_T.txt', sep='\t',
+         #                                          index_col=[0, 1])
+        results_es[3]['layer_HEAT_HIGH_T'] = pd.read_csv(cs_dir/ (config['case_study']+'_loop_0') / 'output' / 'hourly_data' / 'layer_HEAT_HIGH_T.txt', sep='\t',
+                                                   index_col=[0, 1])
+        d5 = es.hourly_plot(plotdata=results_es[0]['layer_HEAT_HIGH_T'], title='HT heat Loop 0', nbr_tds=12)
+        d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T'], title='HT heat Loop 3', nbr_tds=12)
+        d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T']-results_es[0]['layer_HEAT_HIGH_T'],
+                            title='HT heat Loop 3 - Loop 0', nbr_tds=12)
+
+
+
+

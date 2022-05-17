@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 from ..common import *
 
-def read_outputs(cs, hourly_data=False):
+#TODO complete doc
+def read_outputs(cs, hourly_data=False, layers=[]):
     """Reads the EnergyScope outputs in the case study (cs) specified
     Parameters
     ----------
@@ -36,19 +37,30 @@ def read_outputs(cs, hourly_data=False):
     outputs['resources_breakdown'] = pd.read_csv(path/'resources_breakdown.txt', sep='\t', index_col=0)
     outputs['year_balance'] = pd.read_csv(path/'year_balance.txt', sep='\t', index_col=0).dropna(how='all', axis=1)
 
-    if hourly_data:
-        outputs['energy_stored'] = pd.read_csv(path/'hourly_data'/'energy_stored.txt', sep='\t', index_col=0)
-        outputs['layer_ELECTRICITY'] = pd.read_csv(path/'hourly_data'/'layer_ELECTRICITY.txt', sep='\t', index_col=[0,1])
-        outputs['layer_reserve_ELECTRICITY'] = pd.read_csv(path/'hourly_data'/'layer_reserve_ELECTRICITY.txt', sep='\t', index_col=[0,1])
-
-        # TODO addother layers
-
     for o in outputs:
         outputs[o] = clean_col_and_index(outputs[o])
+
+    if hourly_data:
+        outputs['energy_stored'] = pd.read_csv(path/'hourly_data'/'energy_stored.txt', sep='\t', index_col=0)
+        for l in layers:
+            outputs[l] = read_layer(cs,l)
+
+        # TODO addother layers
 
 
 
     return outputs
+
+def read_layer(cs, layer_name, ext='.txt'):
+    """
+
+    """
+
+    layer = pd.read_csv(Path(__file__).parents[2]/'case_studies'/str(cs)/'output' / 'hourly_data' / (layer_name+ext), sep='\t',
+                                               index_col=[0, 1])
+    return clean_col_and_index(layer)
+
+
 
 def clean_col_and_index(df):
     """Strip the leading and trailing white space in columns and index
@@ -100,7 +112,7 @@ def scale_marginal_cost(config: dict):
     mc_scaled.to_csv(cs / 'mc_scaled.txt', sep='\t')
     return mc_scaled
 
-def hourly_plot(plotdata: pd.DataFrame, title='', xticks=None, figsize=(13,7), colors=None, show=True):
+def hourly_plot(plotdata: pd.DataFrame, title='', xticks=None, figsize=(17,7), colors=None, nbr_tds=None, show=True):
     """Cleans and plot the hourly data
     Drops the null columns and plots the hourly data in plotdata dataframe as stacked bars
 
@@ -114,6 +126,9 @@ def hourly_plot(plotdata: pd.DataFrame, title='', xticks=None, figsize=(13,7), c
 
     figsize: tuple
     Figure size for the plot
+
+    nbr_tds: float
+    Number of Typical Days if typical days are plotted. If not, leave to default value (None)
 
     show: Boolean
     Show or not the graph
@@ -141,9 +156,13 @@ def hourly_plot(plotdata: pd.DataFrame, title='', xticks=None, figsize=(13,7), c
         plotdata.plot(kind='bar', position=0, width=1.0, stacked=True, ax=ax, legend=True, xticks=xticks,
                       color=colors)
     ax.set_title(title)
-    ax.legend(loc='center right', bbox_to_anchor=(1.2, 0.5))
+    ax.legend(loc='center right', bbox_to_anchor=(1.5, 0.5))
     ax.set_xlabel('Hour')
     ax.set_ylabel('Power [GW]')
+    if nbr_tds is not None:
+        for i in range(nbr_tds):
+            ax.axvline(x=i * 24, color='dimgray', linestyle='--')
+    plt.subplots_adjust(right=0.75)
     fig.tight_layout()
     fig.show()
     return fig, ax
@@ -183,7 +202,9 @@ def plot_layer_elec_td(layer_elec: pd.DataFrame, title='Layer electricity', tds 
         other_cons: list
         List of cons technologies with max(abs)<0.02*biggest producer  (or consummer)
     """
-    #TODO add colors, add printing names from Technologies dataframe
+    #TODO
+    # add colors, add printing names from Technologies dataframe
+    # add datetime
     plotdata = layer_elec.copy()
     # select specified TDs
     plotdata = plotdata.loc[(tds, slice(None)),:]
@@ -228,7 +249,8 @@ def plot_layer_elec_td(layer_elec: pd.DataFrame, title='Layer electricity', tds 
     plotdata.rename(columns=plotting_names, inplace=True)
     plotdata.rename(columns=lambda x: rename_storage_power(x) if x.endswith('Pin') or x.endswith('Pout') else x, inplace=True)
 
-    fig, ax = hourly_plot(plotdata=plotdata, title=title, xticks=xticks, figsize=figsize, colors=colors_elec)
+    fig, ax = hourly_plot(plotdata=plotdata, title=title, xticks=xticks, figsize=figsize, colors=colors_elec,
+                          nbr_tds=tds[-1], show=True)
 
     return {'fig': fig, 'ax': ax, 'other_prods': other_prods, 'other_cons': other_cons}
 
@@ -239,31 +261,81 @@ def rename_storage_power(s):
     suffix = l[-1]
     return name + ' ' + suffix
 
-# def from_td_to_year(ts_td, t_h_td):
-#     """Converts time series on TDs to yearly time series
-#
-#     Parameters
-#     ----------
-#     ts_td: pandas.DataFrame
-#     Multiindex dataframe of hourly data for each hour of each TD.
-#     The index should be of the form (TD_number, hour_of_the_day).
-#
-#     t_h_td: pandas.DataFrame
-#
-#
-#     """
-#     #TODO finish and test
-#     h2_layer = pd.read_csv(ES_folder / 'case_studies' / config_es['case_study'] / 'output' / 'hourly_data' /
-#                            'layer_H2.txt', delimiter='\t', index_col=[0, 1])
-#     h2_layer.rename(columns=lambda x: x.strip(), inplace=True)
-#     h2_layer.drop(columns=['H2_STORAGE_Pin', 'H2_STORAGE_Pout'], inplace=True)
-#     # computing consumption of H2
-#     h2_td = pd.DataFrame(-h2_layer[h2_layer < 0].sum(axis=1), columns=['ES_H2'])  # TODO automatise name zone assignment
-#     # transforming TD time series into yearly time series
-#     td_final = pd.read_csv(config_es['step1_output'], header=None)
-#     TD_DF = dst.process_TD(td_final)
-#     h2_ts = TD_DF.loc[:, ['TD', 'hour']]
-#     td_h = t_h_td.loc[:,['TD_number','H_of_D']]
-#     ts_yr = td_h.merge(ts_td, left_on=['TD_number','H_of_D'], right_index=True).sort_index()
-#     h2_ts.drop(columns=['TD', 'hour'], inplace=True)
-#     return
+def from_td_to_year(ts_td, t_h_td):
+    """Converts time series on TDs to yearly time series
+
+    Parameters
+    ----------
+    ts_td: pandas.DataFrame
+    Multiindex dataframe of hourly data for each hour of each TD.
+    The index should be of the form (TD_number, hour_of_the_day).
+
+    t_h_td: pandas.DataFrame
+
+
+    """
+    td_h = t_h_td.loc[:,['TD_number','H_of_D']]
+    ts_yr = td_h.merge(ts_td, left_on=['TD_number','H_of_D'], right_index=True).sort_index()
+    return ts_yr.drop(columns=['TD', 'hour'], inplace=True)
+
+def plot_barh(plotdata: pd.DataFrame, treshold=0.15, title='', x_label='', xlim=None, legend=None, figsize=(13,7), show_plot=True):
+    """TODO
+
+    """
+
+    # plotting elec assets
+    fig, ax = plt.subplots(figsize=figsize)
+    plotdata = plotdata.loc[plotdata.max(axis=1) > treshold, :].sort_values(by=plotdata.columns[-1])
+    plotdata.rename(index=plotting_names).plot(kind='barh', width=0.8, colormap='viridis', ax=ax)
+
+    # legend options
+    if legend is None:
+        ax.get_legend().remove()
+    else:
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles[::-1], legend['labels'], loc='lower right', frameon=False)
+    # add title
+    ax.set_title(title)
+    # adding label and lim to x axis
+    ax.set_xlabel(x_label)
+    if xlim is not None:
+        ax.set_xlim('xlim')
+
+    fig.tight_layout()
+    if show_plot:
+        fig.show()
+
+    return fig,ax
+
+def get_assets_l(layer: str, eff_tech: pd.DataFrame, assets: pd.DataFrame, treshold=0.05):
+    """Get the assets' characteristics of the specified layer
+    The installed capacity is in the units of the specified layer
+
+    Parameters
+    ----------
+    layer: str
+    Name of the layer to consider
+
+    eff_tech: pd.DataFrame
+    Layers_in_out withtout the resources rows (i.e. the conversion efficiencies of all the technologies)
+
+    assets: pandas.DataFrame
+    Assets dataframe (as outputted by the model),
+    i.e. rows=technologies, columns=[c_inv, c_maint, lifetime, f_min, f, f_max, fmin_perc, f_perc, fmax_perc, c_p, c_p_max, tau, gwp_constr]
+
+    treshold: float, default=0.1
+    Treshold to select efficiencies of tech. Default gives producing technologies.
+    Set to negative value (ex:-0.05) to get consuming technologies)
+
+    Returns
+    -------
+    df: pd.DataFrame
+    Assets' characteristics of the specified layer
+    i.e. rows=technologies of the layer, columns=[c_inv, c_maint, lifetime, f_min, f, f_max, fmin_perc, f_perc, fmax_perc, c_p, c_p_max, tau, gwp_constr]
+
+    """
+
+    tech = list(eff_tech.loc[eff_tech.loc[:,layer]>treshold,:].index)
+    df = assets.loc[tech,:].copy()
+    df.loc[tech, 'f'] = df.loc[tech,'f'] * eff_tech.loc[tech, layer]
+    return df
