@@ -10,9 +10,10 @@ import pickle
 
 if __name__ == '__main__':
 
-    case_study = '37500_ElecImport=0'
+    case_study = 'PAC2022_scenarios/6250_ElecImport=0'
     n_iter = 4
     plot = True
+    draw_sankey = True
     hourly_plot = True
     ds_plots = False
     show_plots = True
@@ -51,6 +52,8 @@ if __name__ == '__main__':
     results[0] = dict()
     inputs[0] = dict()
     conv = pd.DataFrame(index=['OutputOptimizationError'])
+
+    td_data = es.generate_t_h_td(config)
     for i in range(n_iter):
         # read ES results
         results_es[i] = es.read_outputs(config['case_study']+'_loop_'+str(i), hourly_data=True,
@@ -64,8 +67,8 @@ if __name__ == '__main__':
             except EOFError:
                 pass
 
-        conv.loc[:,i] = results[i]['OutputOptimizationError'].max()
-        if (results[i]['OutputOptimizationError'] > 0).any():
+        conv.loc[:,i] = results[i]['OutputOptimizationError'].abs().sum()
+        if (results[i]['OutputOptimizationError'].abs() > results[i]['OutputOptimalityGap']).any():
             print('Another iteration required')
         else:
             print('Final convergence occurred in loop: ' + str(i) + '. Soft-linking is now complete')
@@ -170,20 +173,28 @@ if __name__ == '__main__':
         # List to rename the iteration
         iter_names = ['No reserve', 'Initialization'] + ['Iteration ' + str(i) for i in np.arange(1, n_iter - 1, 1)]
 
+        # # Example to print the sankey from this script
+        if draw_sankey:
+            # For loop 0
+            es.drawSankey(path= cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'sankey')
+            # For converged solution
+            es.drawSankey(path= cs_dir / (config['case_study'] + '_loop_' + str(n_iter-1)) / 'output' / 'sankey')
+
         # # plotting convergence TODO
-        # fig, ax = plt.subplots(figsize=(13, 7))
-        # # conv.columns = iter_names
-        # conv.loc['OutputOptimizationError',1:].plot(logy=True,ax=ax)
-        # ax.set_title('Evolution of the convergence criteria (optimization error)')
-        # # handles, labels = ax.get_legend_handles_labels()
-        # # ax.legend(handles[::-1], iter_names, loc='lower right', frameon=False)
-        # # ax.set_xlabel('Capacity [GW]')
-        # # ax.set_ylim([0, conv.max().max()])
-        # fig.tight_layout()
-        # if show_plots:
-        #     fig.show()
-        # if save_plots:
-        #     fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'convergence.png')
+        fig, ax = plt.subplots(figsize=(13, 7))
+        # conv.columns = iter_names
+        conv.loc['OutputOptimizationError',1:].plot(logy=True,ax=ax)
+        ax.set_title('Evolution of the convergence criteria (optimization error)')
+        # handles, labels = ax.get_legend_handles_labels()
+        # ax.legend(handles[::-1], iter_names, loc='lower right', frameon=False)
+        # ax.set_xlabel('Capacity [GW]')
+        # ax.set_ylim([0, conv.max().max()])
+        fig.tight_layout()
+        if show_plots:
+            fig.show()
+        if save_plots:
+            fig.savefig(cs_dir / (config['case_study'] + '_loop_' + str(0)) / 'output' / 'convergence.png')
+
 
         # plotting assets elec
         fig,ax = es.plot_barh(assets_elec,treshold=0.15,
@@ -311,6 +322,19 @@ if __name__ == '__main__':
             # TODO do the same for heating layer, add possibility to savefig?
             # layer_elec_yr = es.from_td_to_year(layer_elec, t_h_td)
 
+            results_es[0]['layer_HEAT_HIGH_T'] = es.read_layer(config['case_study'] + '_loop_' + str(0),
+                                                               'layer_HEAT_HIGH_T')
+            results_es[n_iter - 1]['layer_HEAT_HIGH_T'] = es.read_layer(
+                config['case_study'] + '_loop_' + str(n_iter - 1), 'layer_HEAT_HIGH_T')
+
+            d5 = es.hourly_plot(plotdata=results_es[0]['layer_HEAT_HIGH_T'], title='HT heat Loop 0', nbr_tds=12)
+            d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T'], title='HT heat Loop 3', nbr_tds=12)
+            d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T'] - results_es[0]['layer_HEAT_HIGH_T'],
+                                title='HT heat Loop 3 - Loop 0', nbr_tds=12)
+
+            # #example to plot the full year
+            # d7 = es.hourly_plot(plotdata=es.from_td_to_year(results_es[0]['layer_HEAT_HIGH_T'], td_data['t_h_td']), xticks= np.arange(1,8761,288), title='HT heat loop 0 year')
+
         if ds_plots:
 
             rng = pd.date_range('2015-1-01', '2015-12-31', freq='H')
@@ -334,16 +358,6 @@ if __name__ == '__main__':
 
         #TODO add other interesting plots -> energy stored, fourrier transform, layer (colors!!),...
 
-        #TODO add plots from DS
-        results_es[0]['layer_HEAT_HIGH_T'] = es.read_layer(config['case_study']+'_loop_'+str(i), 'layer_HEAT_HIGH_T')
-        #pd.read_csv(cs_dir/ (config['case_study']+'_loop_0') / 'output' / 'hourly_data' / 'layer_HEAT_HIGH_T.txt', sep='\t',
-         #                                          index_col=[0, 1])
-        results_es[3]['layer_HEAT_HIGH_T'] = pd.read_csv(cs_dir/ (config['case_study']+'_loop_0') / 'output' / 'hourly_data' / 'layer_HEAT_HIGH_T.txt', sep='\t',
-                                                   index_col=[0, 1])
-        d5 = es.hourly_plot(plotdata=results_es[0]['layer_HEAT_HIGH_T'], title='HT heat Loop 0', nbr_tds=12)
-        d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T'], title='HT heat Loop 3', nbr_tds=12)
-        d6 = es.hourly_plot(plotdata=results_es[3]['layer_HEAT_HIGH_T']-results_es[0]['layer_HEAT_HIGH_T'],
-                            title='HT heat Loop 3 - Loop 0', nbr_tds=12)
 
 
 

@@ -205,6 +205,7 @@ def plot_layer_elec_td(layer_elec: pd.DataFrame, title='Layer electricity', tds 
     #TODO
     # add colors, add printing names from Technologies dataframe
     # add datetime
+    # speed up
     plotdata = layer_elec.copy()
     # select specified TDs
     plotdata = plotdata.loc[(tds, slice(None)),:]
@@ -276,7 +277,7 @@ def from_td_to_year(ts_td, t_h_td):
     """
     td_h = t_h_td.loc[:,['TD_number','H_of_D']]
     ts_yr = td_h.merge(ts_td, left_on=['TD_number','H_of_D'], right_index=True).sort_index()
-    return ts_yr.drop(columns=['TD', 'hour'], inplace=True)
+    return ts_yr.drop(columns=['TD_number', 'H_of_D'])
 
 def plot_barh(plotdata: pd.DataFrame, treshold=0.15, title='', x_label='', xlim=None, legend=None, figsize=(13,7), show_plot=True):
     """TODO

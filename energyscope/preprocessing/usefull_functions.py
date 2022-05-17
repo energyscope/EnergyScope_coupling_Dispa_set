@@ -7,6 +7,13 @@ Also contains functions to analyse input data
 
 @author: Paolo Thiran
 """
+
+#TODO:
+# add function to go from year time series to td ts
+# go to amplpy version
+# add prints into amplpy
+# check sankey prints
+# check prints
 import logging
 
 import numpy as np
@@ -524,33 +531,21 @@ def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((876
     #TODO add td_of_days or/and t_h_td and/or sorted_td into config?
 
     # READING OUTPUT OF STEP1 #
-    td_of_days = pd.read_csv(step1_out, names=['TD_of_days'])
-    td_of_days['day'] = np.arange(1, 366, 1)  # putting the days of the year beside
+    td_data = generate_t_h_td(config)
 
     # COMPUTING NUMBER OF DAYS REPRESENTED BY EACH TD #
-    sorted_td = td_of_days.groupby('TD_of_days').count()
-    sorted_td.rename(columns={'day': '#days'}, inplace=True)
-    sorted_td.reset_index(inplace=True)
-    sorted_td.set_index(np.arange(1, nbr_td + 1), inplace=True)  # adding number of TD as index
+    sorted_td = td_data['td_count'].copy()
 
     # BUILDING T_H_TD MATRICE #
     # generate T_H_TD
-    td_and_hour_array = np.ones((24 * 365, 2))
-    for i in range(365):
-        td_and_hour_array[i * 24:(i + 1) * 24, 0] = np.arange(1, 25, 1)
-        td_and_hour_array[i * 24:(i + 1) * 24, 1] = td_and_hour_array[i * 24:(i + 1) * 24, 1] * sorted_td[
-            sorted_td['TD_of_days'] == td_of_days.loc[i, 'TD_of_days']].index.values
-    t_h_td = pd.DataFrame(td_and_hour_array, index=np.arange(1, 8761, 1), columns=['H_of_D', 'TD_of_day'])
-    t_h_td = t_h_td.astype('int64')
-    # giving the right syntax
-    t_h_td.reset_index(inplace=True)
-    t_h_td.rename(columns={'index': 'H_of_Y'}, inplace=True)
+    t_h_td = td_data['t_h_td'].copy()
+    # giving the right syntax for AMPL
     t_h_td['par_g'] = '('
     t_h_td['par_d'] = ')'
     t_h_td['comma1'] = ','
     t_h_td['comma2'] = ','
     # giving the right order to the columns
-    t_h_td = t_h_td[['par_g', 'H_of_Y', 'comma1', 'H_of_D', 'comma2', 'TD_of_day', 'par_d']]
+    t_h_td = t_h_td[['par_g', 'H_of_Y', 'comma1', 'H_of_D', 'comma2', 'TD_number', 'par_d']]
 
     # COMPUTING THE NORM OVER THE YEAR ##
     norm = time_series.sum(axis=0)
@@ -704,6 +699,34 @@ def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((876
     return
 
 
+def generate_t_h_td(config, Nbr_TD=12):
+    """Generate t_h_td and td_count dataframes and assign it to each region
+    t_h_td is a pd.DataFrame containing 4 columns:
+    hour of the year (H_of_Y), hour of the day (H_of_D), typical day representing this day (TD_of_days)
+    and the number assigned to this typical day (TD_number)
+
+    td_count is a pd.DataFrame containing 2 columns:
+    List of typical days (TD_of_days) and number of days they represent (#days)
+    """
+    # Reading td_of_days
+    td_of_days = pd.read_csv(config['step1_output'], names=['TD_of_days'])
+    td_of_days['day'] = np.arange(1, 366, 1)  # putting the days of the year beside
+
+    # COMPUTING NUMBER OF DAYS REPRESENTED BY EACH TD AND ASSIGNING A TD NUMBER TO EACH REPRESENTATIVE DAY
+    td_count = td_of_days.groupby('TD_of_days').count()
+    td_count = td_count.reset_index().rename(columns={'index': 'TD_of_days', 'day': '#days'})
+    td_count['TD_number'] = np.arange(1, Nbr_TD + 1)
+
+    # BUILDING T_H_TD MATRICE
+    t_h_td = pd.DataFrame(np.repeat(td_of_days['TD_of_days'].values, 24, axis=0),
+                          columns=['TD_of_days'])  # column TD_of_days is each TD repeated 24 times
+    map_td = dict(zip(td_count['TD_of_days'],
+                      np.arange(1, Nbr_TD + 1)))  # mapping dictionnary from TD_of_Days to TD number
+    t_h_td['TD_number'] = t_h_td['TD_of_days'].map(map_td)
+    t_h_td['H_of_D'] = np.resize(np.arange(1, 25), t_h_td.shape[0])  # 365 times hours from 1 to 24
+    t_h_td['H_of_Y'] = np.arange(1, 8761)
+    return {'td_of_days': td_of_days, 'td_count': td_count, 't_h_td': t_h_td}
+
 def update_version(config):
     """
 
@@ -795,49 +818,3 @@ def compute_gwp_op(import_folders, out_path):
     gwp_op_final = gwp_op_new[resources_layers]
 
     return gwp_op_final.combine_first(gwp_op_data)
-
-
-def generate_t_h_td(config, Nbr_TD=12):
-    """Read output of STEP1 and generate t_h_td and td_count dataframes
-
-    Parameters
-    ----------
-    config: dict()
-    Configuration dictionnary of EnergyScope case study
-
-    Nbr_TD: int
-    Number of typical days
-
-    Returns
-    -------
-
-    t_h_td: pd.DataFrame
-    Dataframe containing 4 columns:
-    hour of the year (H_of_Y), hour of the day (H_of_D), typical day representing this day (TD_of_days)
-    and the number assigned to this typical day (TD_number)
-
-    td_count: pd.DataFrame
-    Dataframe containing 2 columns:
-    List of typical days (TD_of_days) and number of days they represent (#days)
-
-    """
-    #TODO add Nbr_TD as an input (into config?)
-
-    # READING OUTPUT OF STEP1 #
-    td_of_days = pd.read_csv(config['step1_output'], names=['TD_of_days'])
-    td_of_days['day'] = np.arange(1, 366, 1)  # putting the days of the year beside
-
-    # COMPUTING NUMBER OF DAYS REPRESENTED BY EACH TD AND ASSIGNING A TD NUMBER TO EACH REPRESENTATIVE DAY
-    td_count = td_of_days.groupby('TD_of_days').count()
-    td_count = td_count.reset_index().rename(columns={'index': 'TD_of_days', 'day': '#days'})
-    td_count['TD_number'] = np.arange(1, Nbr_TD + 1)
-
-    # BUILDING T_H_TD MATRICE
-    t_h_td = pd.DataFrame(np.repeat(td_of_days['TD_of_days'].values, 24, axis=0),
-                          columns=['TD_of_days'])  # column TD_of_days is each TD repeated 24 times
-    map_td = dict(zip(td_count['TD_of_days'],
-                      np.arange(1, Nbr_TD + 1)))  # mapping dictionnary from TD_of_Days to TD number
-    t_h_td['TD_number'] = t_h_td['TD_of_days'].map(map_td)
-    t_h_td['H_of_D'] = np.resize(np.arange(1, 25), t_h_td.shape[0])  # 365 times hours from 1 to 24
-    t_h_td['H_of_Y'] = np.arange(1, 8761)
-    return t_h_td, td_count
