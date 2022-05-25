@@ -24,8 +24,7 @@ def read_outputs(cs, hourly_data=False, layers=[]):
 
     logging.info('Reading outputs from: '+str(path))
     outputs = dict()
-    outputs['assets'] = pd.read_csv(path/'assets.txt', sep="\t", skiprows=[1], index_col=0)
-    outputs['assets'].columns = list(outputs['assets'].columns)[1:]+['']
+    outputs['assets'] = pd.read_csv(path/'assets.txt', sep="\t", skiprows=[1], index_col=False).set_index('TECHNOLOGIES')
     outputs['assets'].dropna(how='all', axis=1, inplace=True)
     outputs['CO2_cost'] = pd.read_csv(path/'CO2_cost.txt', sep="\t", header=None, index_col=False)
     outputs['CO2_cost'].index = ['CO2_cost']
