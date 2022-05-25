@@ -10,7 +10,7 @@ import pickle
 
 if __name__ == '__main__':
 
-    case_study = 'PAC2022_scenarios/6250_ElecImport=0'
+    case_study = '37500_ElecImport=0'
     n_iter = 4
     plot = True
     draw_sankey = True
@@ -20,8 +20,8 @@ if __name__ == '__main__':
     save_plots = False
 
     path = Path(__file__).parents[1]
-    user_data = path/'Data'/'User_data'
-    developer_data = path/'Data'/'Developer_data'
+    year = 2035
+    data_folder = path/'Data'/str(year)
     es_path = path/'energyscope'/'STEP_2_Energy_Model'
     step1_output = path/'energyscope'/'STEP_1_TD_selection'/'TD_of_days.out'
     # specify the configuration
@@ -34,7 +34,7 @@ if __name__ == '__main__':
               'printing_td': False,
               'GWP_limit': 37500,  # [ktCO2-eq./year]	# Minimum GWP reduction
               'import_capacity': 9.72,  # [GW] Electrical interconnections with neighbouring countries
-              'data_folders':  [user_data, developer_data],  # Folders containing the csv data files
+              'data_folder': data_folder,  # Folders containing the csv data files
               'ES_path':  es_path,  # Path to the energy model (.mod and .run files)
               'step1_output': step1_output, # Output of the step 1 selection of typical days
               'all_data': dict()}
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     cs_dir = path/'case_studies'
 
     # reading the input data
-    config['all_data'] = es.import_data([user_data, developer_data])
+    config['all_data'] = es.import_data(data_folder)
 
     # reading the outputs
     iters = np.arange(n_iter-1,-1,-1)
@@ -121,18 +121,18 @@ if __name__ == '__main__':
     layer_reserve_elec = results_es[iter_to_plot]['layer_reserve_ELECTRICITY'].dropna(axis=1)
 
 
-    # # DS outputs
-    LL = pd.DataFrame()
-    Curtailment = pd.DataFrame()
-    for i in np.arange(0,n_iter):
-        LL = pd.concat([LL, results[i]['OutputShedLoad']], axis=1)
-        Curtailment = pd.concat([Curtailment, results[i]['OutputCurtailedPower']], axis=1)
-    LL.columns = np.arange(0,n_iter)
-    Curtailment.columns = np.arange(0,n_iter)
-    ENS_max = LL.max()
+    # # # DS outputs
+    # LL = pd.DataFrame()
+    # Curtailment = pd.DataFrame()
+    # for i in np.arange(0,n_iter):
+    #     LL = pd.concat([LL, results[i]['OutputShedLoad']], axis=1)
+    #     Curtailment = pd.concat([Curtailment, results[i]['OutputCurtailedPower']], axis=1)
+    # LL.columns = np.arange(0,n_iter)
+    # Curtailment.columns = np.arange(0,n_iter)
+    # ENS_max = LL.max()
 
     # Compute curtailment in DS and ES and share renewables in elec and primary
-    yr_curt_ds = Curtailment.sum() / 1000
+    # yr_curt_ds = Curtailment.sum() / 1000
     re_assets = ['PV', 'WIND_ONSHORE', 'WIND_OFFSHORE', 'HYDRO_RIVER']
     yr_elec_es = pd.DataFrame(index=results_es[i]['year_balance'].index)
     for i in range(n_iter):
@@ -244,7 +244,7 @@ if __name__ == '__main__':
 
 
         # plotting storage assets
-        fig, ax = es.plot_barh(assets_sto.drop(index='GAS_STORAGE'), treshold=1.0,
+        fig, ax = es.plot_barh(assets_sto, treshold=1.0,
                      title='Installed capacity of storage assets', x_label='Capacity [GWh]',
                      legend={'labels': iter_names}, show_plot=show_plots)
         # if save_plots:

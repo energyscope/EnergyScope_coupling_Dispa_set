@@ -79,21 +79,21 @@ def read_json(file):
 
 
 # Function to import the data from the CSV data files #
-def import_data(import_folders):
+def import_data(import_folder):
     logging.info('Importing data files')
     # Reading CSV #
     # Reading User CSV to build dataframes
-    eud = pd.read_csv(import_folders[0]/'Demand.csv', sep=';', index_col=2, header=0)
-    resources = pd.read_csv(import_folders[0]/'Resources.csv', sep=';', index_col=2, header=2)
-    technologies = pd.read_csv(import_folders[0]/'Technologies.csv', sep=';', index_col=3, header=0, skiprows=[1])
+    eud = pd.read_csv(import_folder / 'Demand.csv', sep=';', index_col=2, header=0)
+    resources = pd.read_csv(import_folder / 'Resources.csv', sep=';', index_col=2, header=2)
+    technologies = pd.read_csv(import_folder / 'Technologies.csv', sep=';', index_col=3, header=0, skiprows=[1])
 
     # Reading Developer CSV to build dataframes
-    end_uses_categories = pd.read_csv(import_folders[1]/'END_USES_CATEGORIES.csv', sep=';')
-    layers_in_out = pd.read_csv(import_folders[1]/'Layers_in_out.csv', sep=';', index_col=0)
-    storage_characteristics = pd.read_csv(import_folders[1]/'Storage_characteristics.csv', sep=';', index_col=0)
-    storage_eff_in = pd.read_csv(import_folders[1]/'Storage_eff_in.csv', sep=';', index_col=0)
-    storage_eff_out = pd.read_csv(import_folders[1]/'Storage_eff_out.csv', sep=';', index_col=0)
-    time_series = pd.read_csv(import_folders[1]/'Time_series.csv', sep=';', header=0, index_col=0)
+    end_uses_categories = pd.read_csv(import_folder / 'END_USES_CATEGORIES.csv', sep=';')
+    layers_in_out = pd.read_csv(import_folder / 'Layers_in_out.csv', sep=';', index_col=0)
+    storage_characteristics = pd.read_csv(import_folder / 'Storage_characteristics.csv', sep=';', index_col=0)
+    storage_eff_in = pd.read_csv(import_folder / 'Storage_eff_in.csv', sep=';', index_col=0)
+    storage_eff_out = pd.read_csv(import_folder / 'Storage_eff_out.csv', sep=';', index_col=0)
+    time_series = pd.read_csv(import_folder / 'Time_series.csv', sep=';', header=0, index_col=0)
 
     # Pre-processing #
     resources.drop(columns=['Comment'], inplace=True)
@@ -145,7 +145,6 @@ def print_data(config):
     out_path = cs / config['case_study'] / 'ESTD_data.dat'
     # config['ES_path'] + '/ESTD_data.dat'
     gwp_limit = config['GWP_limit']
-    import_capacity = config['import_capacity']  # [GW] Maximum power of electrical interconnections
 
     # Pre-processing df #
 
@@ -195,6 +194,7 @@ def print_data(config):
     # Network
     loss_network = config['user_defined']['loss_network']
     c_grid_extra = config['user_defined']['c_grid_extra'] # cost to reinforce the grid due to intermittent renewable energy penetration. See 2.2.2
+    import_capacity = config['user_defined']['import_capacity']  # [GW] Maximum power of electrical interconnections
 
     # Storage daily
     STORAGE_DAILY = config['user_defined']['STORAGE_DAILY'] # TODO automatise

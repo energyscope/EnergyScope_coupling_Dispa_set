@@ -10,9 +10,9 @@ import logging
 def run_ES(config):
     if config['importing']:
         # Reading the data
-        all_data = import_data(config['data_folders'])
+        all_data = import_data(config['data_folder'])
         # TODO integrate better
-        config['user_defined'] = read_json(config['data_folders'][0] / 'user_defined.json')
+        config['user_defined'] = read_json(config['data_folder'] / 'user_defined.json')
     else:
         all_data = config['all_data']
 
