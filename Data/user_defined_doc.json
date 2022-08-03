@@ -1,6 +1,7 @@
 {
     "i_rate" : "Real discount rate [-]",
     "re_share_primary" : "Minimum RE share in primary consumption [-]",
+    "curt_perc_cap" : "Maximum curtailment on renewable technologies",
     "solar_area" : "Available area for solar panels [km^2]",
 	"power_density_pv" : "PV : 1 kW/4.22m2   => 0.2367 kW/m2 => 0.2367 GW/km2",
     "power_density_solar_thermal" : "Solar thermal : 1 kW/3.5m2 => 0.2857 kW/m2 => 0.2857 GW/km2",

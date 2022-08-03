@@ -143,10 +143,10 @@ param PathName symbolic default "./output"; #place where outputs are print
 			print "--------------SAVING ASSETS -----------";
 			printf "TECHNOLOGIES\t c_inv\t c_maint\t lifetime\t  f_min\t f\t f_max\t fmin_perc\t" > (PathName & "/assets.txt");
 			printf "f_perc\t fmax_perc\t c_p\t c_p_max\t tau\t gwp_constr" > (PathName & "/assets.txt"); # Must be split in 2 parts, otherwise too long for GLPK
-			printf "\n UNITS\t[MCHCapitalf/GW]\t [MCHCapitalf/GW]\t [y]\t [GW or GWh]\t" >> (PathName & "/assets.txt");
-			printf " [GW or GWh]\t [GW or GWh]\t [0-1]\t [0-1]\t [0-1]\t [0-1]\t [0-1]\t [-]\t [ktCO2-eq./GW or GWh] " >> (PathName & "/assets.txt");
+			printf "\nUNITS\t[MCHCapitalf/GW]\t[MCHCapitalf/GW]\t[y]\t[GW or GWh]\t" >> (PathName & "/assets.txt");
+			printf "[GW or GWh]\t[GW or GWh]\t[0-1]\t[0-1]\t[0-1]\t[0-1]\t[0-1]\t[-]\t [ktCO2-eq./GW or GWh] " >> (PathName & "/assets.txt");
 			for {i in END_USES_TYPES, tech in TECHNOLOGIES_OF_END_USES_TYPE[i]}{
-				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t",tech,
+				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f",tech,
 			C_inv[tech],C_maint[tech],lifetime[tech],f_min[tech],F[tech],f_max[tech],
 			fmin_perc[tech],
 			sum {t in PERIODS, h in HOUR_OF_PERIOD[t], td in TYPICAL_DAY_OF_PERIOD[t]} (F_t [tech,h,td] ) / max(sum {j2 in
@@ -156,7 +156,7 @@ param PathName symbolic default "./output"; #place where outputs are print
 			c_p[tech],tau[tech],GWP_constr[tech] >> (PathName & "/assets.txt");
 			}
 			for {tech in STORAGE_TECH}{
-				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t",tech,
+				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f",tech,
 			C_inv[tech],C_maint[tech],lifetime[tech],f_min[tech],F[tech],f_max[tech],
 			fmin_perc[tech],
 			-1,
@@ -165,7 +165,7 @@ param PathName symbolic default "./output"; #place where outputs are print
 			,c_p[tech],tau[tech],GWP_constr[tech] >> (PathName & "/assets.txt");
 			}
 			for {tech in INFRASTRUCTURE}{
-				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t",tech,
+				printf "\n%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t%f",tech,
 			C_inv[tech],C_maint[tech],lifetime[tech],f_min[tech],F[tech],f_max[tech],
 			fmin_perc[tech],
 			-1,
@@ -203,6 +203,15 @@ param PathName symbolic default "./output"; #place where outputs are print
 					}
 				}
 			}
+
+            # CURTAILMENT
+            print "--------------SAVING CURTAILMENT -----------";
+            printf "%s\t%s\%s", "TD", "Hour", "Curtailment"> (PathName & "/hourly_data/curtailment.txt");
+
+			printf "\n" > (PathName & "/hourly_data/curtailment.txt");
+			for {td in TYPICAL_DAYS, h in HOURS}{
+				printf "%.0f\t%.0f\t%.6f\n", td, h, Curtailment[h,td] > (PathName & "/hourly_data/curtailment.txt");
+				}
 
 			# LAYERS FLUXES
 			print "--------------SAVING LAYERS -----------";

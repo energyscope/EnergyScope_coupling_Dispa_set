@@ -1,6 +1,7 @@
 {
     "i_rate" : 0.015,
     "re_share_primary" : 0,
+    "curt_perc_cap" : 0.1,
     "solar_area" : 250,
 	"power_density_pv" : 0.2367,
     "power_density_solar_thermal" : 0.2857,

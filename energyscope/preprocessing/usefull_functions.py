@@ -166,6 +166,7 @@ def print_data(config):
     i_rate = config['user_defined']['i_rate']  # [-]
     # Political inputs
     re_share_primary = config['user_defined']['re_share_primary']  # [-] Minimum RE share in primary consumption
+    curt_perc_cap = config['user_defined']['curt_perc_cap'] # Maximum percentage of curtaiment on renewable technologies
     solar_area = config['user_defined']['solar_area']  # [km^2]
     power_density_pv = config['user_defined']['power_density_pv']  # PV : 1 kW/4.22m2   => 0.2367 kW/m2 => 0.2367 GW/km2
     power_density_solar_thermal = config['user_defined']['power_density_solar_thermal']  # Solar thermal : 1 kW/3.5m2 => 0.2857 kW/m2 => 0.2857 GW/km2
@@ -205,6 +206,7 @@ def print_data(config):
     END_USES_CATEGORIES = list(end_uses_categories.loc[:, 'END_USES_CATEGORIES'].unique())
     RESOURCES = list(resources_simple.index)
     RES_IMPORT_CONSTANT = ['GAS', 'GAS_RE', 'H2_RE', 'H2']  # TODO automatise
+    RE_TECH = ['PV', 'WIND_ONSHORE', 'WIND_OFFSHORE', 'HYDRO_RIVER'] # TODO automatise
     RENEWABLE_FUELS = list(resources[resources.loc[:, 'Subcategory'] == 'Biofuel'].index)
     RE_RESOURCES = list(
         resources.loc[(resources['Category'] == 'Renewable'), :].index)
@@ -347,6 +349,7 @@ def print_data(config):
     print_set(RES_IMPORT_CONSTANT, 'RES_IMPORT_CONSTANT', out_path)
     print_set(RENEWABLE_FUELS, 'RENEWABLE_FUELS', out_path)
     print_set(RE_RESOURCES, 'RE_RESOURCES', out_path)
+    print_set(RE_TECH, 'RE_TECH', out_path)
     print_set(EXPORT, 'EXPORT', out_path)
     newline(out_path)
     n = 0
@@ -409,6 +412,7 @@ def print_data(config):
     # printing i_rate, re_share_primary,gwp_limit,solar_area
     print_param('i_rate', i_rate, 'part [2.7.4]', out_path)
     print_param('re_share_primary', re_share_primary, 'Minimum RE share in primary consumption', out_path)
+    print_param('curt_perc_cap', curt_perc_cap, 'Maximum percentage of curtailment on renewable technologies', out_path)
     print_param('gwp_limit', gwp_limit, 'gwp_limit [ktCO2-eq./year]: maximum GWP emissions', out_path)
     print_param('solar_area', solar_area, '', out_path)
     print_param('power_density_pv', power_density_pv, 'PV : 1 kW/4.22m2   => 0.2367 kW/m2 => 0.2367 GW/km2',
@@ -764,7 +768,7 @@ def update_version(config):
 # Function to compute the annual average emission factors of each resource from the outputs #
 def compute_gwp_op(import_folders, out_path):
     # import data and model outputs
-    resources = pd.read_csv(import_folders[0] / 'Resources.csv', sep=';', index_col=2, header=2)
+    resources = pd.read_csv(import_folders / 'Resources.csv', sep=';', index_col=2, header=2)
     yb = pd.read_csv((out_path / 'output') / 'year_balance.txt', sep='\t', index_col=0)
 
     # clean df and get useful data

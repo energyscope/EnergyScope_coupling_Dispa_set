@@ -47,6 +47,7 @@ set INFRASTRUCTURE; # Infrastructure: DHN, grid, and intermediate energy convers
 set LAYERS := (RESOURCES diff RENEWABLE_FUELS diff EXPORT) union END_USES_TYPES; # Layers are used to balance resources/products in the system
 set TECHNOLOGIES := (setof {i in END_USES_TYPES, j in TECHNOLOGIES_OF_END_USES_TYPE [i]} j) union STORAGE_TECH union INFRASTRUCTURE; 
 set TECHNOLOGIES_OF_END_USES_CATEGORY {i in END_USES_CATEGORIES} within TECHNOLOGIES := setof {j in END_USES_TYPES_OF_CATEGORY[i], k in TECHNOLOGIES_OF_END_USES_TYPE [j]} k;
+set RE_TECH within TECHNOLOGIES;
 set RE_RESOURCES within RESOURCES; # List of RE resources (including wind hydro solar), used to compute the RE share
 set V2G within TECHNOLOGIES;   # EVs which can be used for vehicle-to-grid (V2G).
 set EVs_BATT   within STORAGE_TECH; # specific battery of EVs
@@ -78,6 +79,7 @@ param end_uses_demand_year {END_USES_INPUT, SECTORS} >= 0 default 0; # end_uses_
 param end_uses_input {i in END_USES_INPUT} := sum {s in SECTORS} (end_uses_demand_year [i,s]); # end_uses_input (Figure 1.4) [GWh]: total demand for each type of end-uses across sectors (yearly energy) as input from the demand-side model. [Mpkm] or [Mtkm] for passenger or freight mobility.
 param i_rate > 0; # discount rate [-]: real discount rate
 param re_share_primary >= 0; # re_share [-]: minimum share of primary energy coming from RE
+param curt_perc_cap >= 0, <= 1 default 0.1; # maximum curtailment of renewable technologies
 param gwp_limit >= 0;    # [ktCO2-eq./year] maximum gwp emissions allowed.
 param share_mobility_public_min >= 0, <= 1; # %_public,min [-]: min limit for penetration of public mobility over total mobility 
 param share_mobility_public_max >= 0, <= 1; # %_public,max [-]: max limit for penetration of public mobility over total mobility 
@@ -161,6 +163,7 @@ var GWP_constr {TECHNOLOGIES} >= 0; # GWP_constr [ktCO2-eq.]: Total emissions of
 var GWP_op {RESOURCES} >= 0; #  GWP_op [ktCO2-eq.]: Total yearly emissions of the resources [ktCO2-eq./y]
 var Network_losses {END_USES_TYPES, HOURS, TYPICAL_DAYS} >= 0; # Net_loss [GW]: Losses in the networks (normally electricity grid and DHN)
 var Storage_level {STORAGE_TECH, PERIODS} >= 0; # Sto_level [GWh]: Energy stored at each period
+var Curtailment {HOURS, TYPICAL_DAYS} >=0; # compute Curtailment for all renewable resources
 
 
 ## NEW - parameters for strategic reserves at any time:
@@ -260,7 +263,16 @@ subject to capacity_factor_t {j in TECHNOLOGIES, h in HOURS, td in TYPICAL_DAYS}
 	
 # [Eq. 2.11] relation between mult_t and mult via yearly capacity factor. This one forces total annual output
 subject to capacity_factor {j in TECHNOLOGIES}:
-	sum {t in PERIODS, h in HOUR_OF_PERIOD [t], td in TYPICAL_DAY_OF_PERIOD [t]} (F_t [j, h, td] * t_op [h, td]) <= F [j] * c_p [j] * total_time;	
+	sum {t in PERIODS, h in HOUR_OF_PERIOD [t], td in TYPICAL_DAY_OF_PERIOD [t]} (F_t [j, h, td] * t_op [h, td]) <= F [j] * c_p [j] * total_time;
+
+# Compute explicitly curtailment of renewable
+subject to curtailment_computation {h in HOURS, td in TYPICAL_DAYS}:
+	Curtailment [h,td] = sum {j in RE_TECH} (F [j] * c_p_t [j, h, td] - F_t [j, h, td]);
+
+# Add a cap on curtailement
+subject to curtailment_cap:
+	sum {t in PERIODS, h in HOUR_OF_PERIOD [t], td in TYPICAL_DAY_OF_PERIOD [t]} (Curtailment [h, td])
+	<= curt_perc_cap * sum {j in RE_TECH, t in PERIODS, h in HOUR_OF_PERIOD [t], td in TYPICAL_DAY_OF_PERIOD [t]} (F [j] * c_p_t [j, h, td]);
 		
 ## Resources
 #-----------
