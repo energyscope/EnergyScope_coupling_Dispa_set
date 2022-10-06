@@ -264,12 +264,10 @@ def print_data(config):
     BOILERS = []
 
     for i in ALL_TECH_OF_EUT:
-        if (layers_in_out.loc[i, 'HEAT_HIGH_T'] == 1 or layers_in_out.loc[i, 'HEAT_LOW_T_DHN'] == 1 or
-                layers_in_out.loc[i, 'HEAT_LOW_T_DECEN'] == 1):
-            if layers_in_out.loc[i, 'ELECTRICITY'] > 0:
-                COGEN.append(i)
-            else:
-                BOILERS.append(i)
+        if 'BOILER' in i:
+            BOILERS.append(i)
+        if 'COGEN' in i:
+            COGEN.append(i)
 
     # Adding AMPL syntax #
     # creating Batt_per_Car_df for printing
@@ -558,11 +556,10 @@ def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((876
 
     # BUILDING TD TIMESERIES #
     # creating df with 2 columns : day of the year | hour in the day
-    day_and_hour_array = np.ones((24 * 365, 2))
-    for i in range(365):
-        day_and_hour_array[i * 24:(i + 1) * 24, 0] = day_and_hour_array[i * 24:(i + 1) * 24, 0] * (i + 1)
-        day_and_hour_array[i * 24:(i + 1) * 24, 1] = np.arange(1, 25, 1)
-    day_and_hour = pd.DataFrame(day_and_hour_array, index=np.arange(1, 8761, 1), columns=['D_of_H', 'H_of_D'])
+    d_of_h = np.repeat(np.arange(1, 366, 1), 24, axis=0)  # 24 times each day of the year
+    h_of_d = np.resize(np.arange(1, 25), 24 * 365)  # 365 times hours from 1 to 24
+    day_and_hour = pd.DataFrame(np.vstack((d_of_h, h_of_d)).T, index=np.arange(1, 8761, 1),
+                                columns=['D_of_H', 'H_of_D'])
     day_and_hour = day_and_hour.astype('int64')
     time_series = time_series.merge(day_and_hour, left_index=True, right_index=True)
 
@@ -592,40 +589,14 @@ def print_td_data(config, nbr_td=12, end_uses_reserve=pd.DataFrame(np.zeros((876
 
     # PRINTING #
     # printing description of file
-    with open(out_path, mode='w', newline='') as td_file:
-        td_writer = csv.writer(td_file, delimiter='\t', quotechar=' ', quoting=csv.QUOTE_MINIMAL)
+    # printing description of file
+    header_fn = (Path(__file__).parents[1] / 'headers' / 'header_12td.txt')
+    with open(out_path, mode='w', newline='') as td_file, open(header_fn, 'r') as header:
+        for line in header:
+            td_file.write(line)
 
-        # Comments and license
-        td_writer.writerow([
-            '# -------------------------------------------------------------------------------------------------------------------------	'])
-        td_writer.writerow([
-            '#	EnergyScope TD is an open-source energy model suitable for country scale analysis. It is a simplified representation of an urban or national energy system accounting for the energy flows'])
-        td_writer.writerow([
-            '#	within its boundaries. Based on a hourly resolution, it optimises the design and operation of the energy system while minimizing the cost of the system.'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow([
-            '#	Copyright (C) <2018-2019> <Ecole Polytechnique Fédérale de Lausanne (EPFL), Switzerland and Université catholique de Louvain (UCLouvain), Belgium>'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow(['#	Licensed under the Apache License, Version 2.0 (the "License");'])
-        td_writer.writerow(['#	you may not use this file except in compliance with the License.'])
-        td_writer.writerow(['#	You may obtain a copy of the License at'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow(['#	http://www.apache.org/licenses/LICENSE-2.0'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow(['#	Unless required by applicable law or agreed to in writing, software'])
-        td_writer.writerow(['#	distributed under the License is distributed on an "AS IS" BASIS,'])
-        td_writer.writerow(['#	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.'])
-        td_writer.writerow(['#	See the License for the specific language governing permissions and'])
-        td_writer.writerow(['#	limitations under the License.'])
-        td_writer.writerow(['#	'])
-        td_writer.writerow(['#	Description and complete License: see LICENSE file.'])
-        td_writer.writerow([
-            '# -------------------------------------------------------------------------------------------------------------------------	'])
-        td_writer.writerow(['	'])
-        # peak_sh_factor
-        td_writer.writerow(['# SETS depending on TD	'])
-        td_writer.writerow(['# --------------------------	'])
+    # printing sets and parameters
+        td_writer = csv.writer(td_file, delimiter='\t', quotechar=' ', quoting=csv.QUOTE_MINIMAL)
         td_writer.writerow(['param peak_sh_factor	:=	' + str(peak_sh_factor)])
         td_writer.writerow([';		'])
         td_writer.writerow(['		'])

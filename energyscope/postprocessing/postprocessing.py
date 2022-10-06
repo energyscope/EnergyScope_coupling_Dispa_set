@@ -202,9 +202,9 @@ def plot_layer_elec_td(layer_elec: pd.DataFrame, title='Layer electricity', tds 
         List of cons technologies with max(abs)<0.02*biggest producer  (or consummer)
     """
     #TODO
-    # add colors, add printing names from Technologies dataframe
     # add datetime
     # speed up
+    # split into 2 parts -> clean_elec and plot_td
     plotdata = layer_elec.copy()
     # select specified TDs
     plotdata = plotdata.loc[(tds, slice(None)),:]
